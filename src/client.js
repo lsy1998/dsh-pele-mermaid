@@ -15,7 +15,9 @@ import {
   resetPeleRuntimeForTesting,
 } from './runtime.js';
 import { ensureStandaloneSvg, svgFileName, downloadSvg } from './svg.js';
-import { MIN_SCALE, MAX_SCALE, ZOOM_STEP, clamp, createZoomState, measureSvg, round } from './zoom.js';
+import {
+  MIN_SCALE, MAX_SCALE, ZOOM_STEP, clamp, clampScroll, createZoomState, measureSvg, readScroll, round, writeScroll,
+} from './zoom.js';
 import { createViewer } from './viewer.js';
 import {
   codeSource,
@@ -383,6 +385,10 @@ function enhanceInfo(info) {
     disposed: false,
     // Per-block zoom/pan state (SPEC R9 parity for the inline pane).
     zoom: createZoomState(),
+    // The pristine Pele render result (svg markup + natural size), keyed by generation.
+    pristine: null,
+    // Saved inline state, restored when the fullscreen overlay closes (SPEC R9).
+    inlineRestore: null,
     zoomNatural: { width: 0, height: 0 },
     zoomFit: 1,
     zoomStatus,
@@ -739,6 +745,16 @@ function formatRenderFailure(error) {
 function finalizeRendered(entry, result, generation) {
   if (!isLive(entry) || generation !== entry.generation) return;
   entry.lastRendered = entry.source;
+  // Remember the PRISTINE render result (SPEC R10): result.svg is the markup Pele produced,
+  // before any of our inline zoom styles were applied to the mounted element. The export and
+  // the viewer both need it, and it is keyed by generation so a stale render cannot leak in.
+  // Pele emits NO viewBox, so its width/height are the only source of the true natural size.
+  entry.pristine = {
+    generation: entry.generation,
+    svg: typeof (result && result.svg) === 'string' ? result.svg : '',
+    width: Number(result && result.width) > 0 ? Number(result.width) : 0,
+    height: Number(result && result.height) > 0 ? Number(result.height) : 0,
+  };
   // A fresh render replaces the diagram, so the per-block zoom/pan state starts
   // over (the previous transform belonged to the old SVG). resetInlineZoom also
   // re-measures the fit scale for the new SVG.
@@ -1081,8 +1097,8 @@ function openViewer(entry) {
   if (!svg) return;
   // Remember where the inline pane was, so closing the overlay can restore it.
   entry.inlineRestore = {
-    scrollLeft: entry.pane.scrollLeft || 0,
-    scrollTop: entry.pane.scrollTop || 0,
+    scrollLeft: readScroll(entry.pane, 'left'),
+    scrollTop: readScroll(entry.pane, 'top'),
     zoom: entry.zoom ? entry.zoom.snapshot() : null,
   };
   // The overlay continues from the EFFECTIVE on-screen scale of the inline
@@ -1091,7 +1107,8 @@ function openViewer(entry) {
   const effective = inlineScale(entry);
   try {
     ensureViewer().open({
-      svg: svg.outerHTML,
+      // The pristine markup, so the overlay shows the WHOLE diagram at its natural size.
+      svg: pristineMarkup(entry).markup || svg.outerHTML,
       source: entry.source,
       type: entry.type || 'mermaid',
       trigger: entry.btnFullscreen,
@@ -1129,22 +1146,101 @@ function restoreInlineAfterViewer(entry) {
   }
 }
 
-function downloadEntry(entry) {
-  if (!isLive(entry)) return;
-  const svg = entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
-  if (!svg) return;
-  const variables = themeVariables(state.win);
+/** The width/height attributes an SVG string declares on its root, in px (0 when absent). */
+function declaredSize(markup) {
+  const match = /<svg\b[^>]*>/i.exec(String(markup || ''));
+  if (!match) return { width: 0, height: 0 };
+  const tag = match[0];
+  const width = /\swidth\s*=\s*["']([\d.]+)["']/i.exec(tag);
+  const height = /\sheight\s*=\s*["']([\d.]+)["']/i.exec(tag);
+  return {
+    width: width ? Number(width[1]) : 0,
+    height: height ? Number(height[1]) : 0,
+  };
+}
+
+/**
+ * The pristine markup to export.
+ *
+ * The mounted <svg> carries the inline zoom styles written by applyInlineZoom() (an explicit
+ * width/height and max-width:none), so serialising the on-screen element exported the CROPPED,
+ * ZOOMED rendering: the file showed whatever happened to be inside the pane, and it changed
+ * every time the user zoomed or panned. Pele's RenderResult.svg is the untouched markup, which
+ * is what R10 asks for. The DOM element is only a fallback for runtimes that do not report a
+ * result, and even then the zoom styles are stripped and the natural size restored.
+ */
+function pristineMarkup(entry) {
+  const pristine = entry.pristine;
+  if (pristine && pristine.svg) {
+    // The natural size comes from the markup's OWN width/height attributes first (they are the
+    // size Pele actually drew), and from the reported result only as a fallback - a runtime
+    // may report a different number than it emitted.
+    const declared = declaredSize(pristine.svg);
+    return {
+      markup: pristine.svg,
+      width: declared.width > 0 ? declared.width : pristine.width,
+      height: declared.height > 0 ? declared.height : pristine.height,
+    };
+  }
+  const svg = entry.pane && entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
+  if (!svg) return { markup: '', width: 0, height: 0 };
   const clone = svg.cloneNode(true);
-  if (clone.style && typeof clone.style.setProperty === 'function') {
-    for (const name of Object.keys(variables)) {
-      try {
-        clone.style.setProperty(name, variables[name]);
-      } catch {
-        /* ignore */
-      }
+  const style = clone.style;
+  if (style) {
+    for (const name of ['width', 'height', 'max-width', 'min-width', 'min-height', 'transform', 'transform-origin', 'margin', 'position']) {
+      try { style.removeProperty(name); } catch { /* ignore unusable style objects */ }
     }
   }
-  const markup = ensureStandaloneSvg(clone.outerHTML, { background: variables['--pele-bg'] });
+  // Restore the natural size from the remembered render result.
+  const natural = entry.zoomNatural || {};
+  if (natural.width > 0 && !clone.getAttribute('width')) {
+    try { clone.setAttribute('width', String(natural.width)); } catch { /* ignore */ }
+  }
+  if (natural.height > 0 && !clone.getAttribute('height')) {
+    try { clone.setAttribute('height', String(natural.height)); } catch { /* ignore */ }
+  }
+  return { markup: clone.outerHTML, width: natural.width || 0, height: natural.height || 0 };
+}
+
+/**
+ * Write the resolved --pele-* variables onto the ROOT element of an SVG string.
+ *
+ * They are what makes the export look the same outside DSH (R10). They are injected as a
+ * `style` attribute on the root, which is why this must run on the PRISTINE markup: the
+ * on-screen element's style attribute is owned by the zoom code.
+ */
+function withThemeVariables(markup, variables) {
+  const names = Object.keys(variables || {}).filter((name) => name.indexOf('--pele-') === 0 && variables[name]);
+  if (!names.length || typeof markup !== 'string' || !markup) return markup;
+  const declarations = names.map((name) => name + ':' + variables[name]).join(';');
+  const match = /<svg\b[^>]*>/i.exec(markup);
+  if (!match) return markup;
+  const tag = match[0];
+  const styled = /\sstyle\s*=\s*"([^"]*)"/i.exec(tag);
+  let next;
+  if (styled) {
+    const merged = String(styled[1]).replace(/;\s*$/, '');
+    next = tag.replace(styled[0], ' style="' + (merged ? merged + ';' : '') + declarations + '"');
+  } else {
+    next = tag.replace(/>$/, ' style="' + declarations + '">');
+  }
+  return markup.replace(match[0], next);
+}
+
+function downloadEntry(entry) {
+  if (!isLive(entry)) return;
+  const variables = themeVariables(state.win);
+  const source = pristineMarkup(entry);
+  if (!source.markup) return;
+  // R10: the exported root must carry the resolved theme variables, so the file looks the
+  // same outside DSH. They are injected onto the pristine root, which never had any zoom
+  // style on it, so the export stays byte-identical whether or not the user zoomed.
+  const themed = withThemeVariables(source.markup, variables);
+  const markup = ensureStandaloneSvg(themed, {
+    background: variables['--pele-bg'],
+    width: source.width,
+    height: source.height,
+  });
   downloadSvg(markup, svgFileName(entry.type || 'mermaid', new Date()), state.doc);
   setStatus(entry, 'downloaded');
 }

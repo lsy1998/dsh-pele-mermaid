@@ -24,9 +24,38 @@ function parseViewBox(tag) {
 }
 
 /**
+ * The explicit pixel size to write on the root, in pixels, or null.
+ *
+ * Priority: the caller's width/height (the diagram's natural size, as Pele reported it in
+ * the RenderResult), then the existing width/height attributes, then the viewBox. Pele does
+ * NOT emit a viewBox, so a render result is normally the only source of the true size.
+ */
+function explicitSize(tag, options, box) {
+  var width = Number(options.width);
+  var height = Number(options.height);
+  if (!(Number.isFinite(width) && width > 0)) {
+    var attrWidth = /\swidth\s*=\s*["']([\d.]+)["']/i.exec(tag);
+    width = attrWidth ? Number(attrWidth[1]) : 0;
+  }
+  if (!(Number.isFinite(height) && height > 0)) {
+    var attrHeight = /\sheight\s*=\s*["']([\d.]+)["']/i.exec(tag);
+    height = attrHeight ? Number(attrHeight[1]) : 0;
+  }
+  if (!(Number.isFinite(width) && width > 0) && box) width = box.width;
+  if (!(Number.isFinite(height) && height > 0) && box) height = box.height;
+  if (!(Number.isFinite(width) && width > 0) || !(Number.isFinite(height) && height > 0)) return null;
+  return { width: width, height: height };
+}
+
+/**
  * Make a rendered Pele SVG usable outside DSH: namespaces, an explicit
  * pixel size and, when requested, an opaque background rectangle.
- * Non-SVG input is returned unchanged.
+ *
+ * The explicit size comes from options.width/options.height when given (the caller normally
+ * passes the diagram's natural size from the render result, because Pele emits no viewBox),
+ * then from the root's own width/height attributes, then from the viewBox. Without it an
+ * exported diagram would be scaled to whatever its container is - the "only the visible part"
+ * symptom. Non-SVG input is returned unchanged.
  */
 export function ensureStandaloneSvg(svg, opts) {
   var options = opts || {};
@@ -42,20 +71,25 @@ export function ensureStandaloneSvg(svg, opts) {
     tag = tag.replace(/^<svg/i, '<svg xmlns:xlink="' + XLINK_NS + '"');
   }
   var box = parseViewBox(tag);
-  var hasWidth = /\swidth\s*=/.test(tag);
-  var hasHeight = /\sheight\s*=/.test(tag);
-  if (box && (!hasWidth || !hasHeight)) {
-    var size = '';
-    if (!hasWidth) size += ' width="' + box.width + '"';
-    if (!hasHeight) size += ' height="' + box.height + '"';
-    tag = tag.replace(/>$/, size + '>');
+  var size = explicitSize(tag, options, box);
+  if (size) {
+    // Always (re)write the explicit size: an inline zoom may have left a cropped width/height
+    // on the root, and the caller's natural size is the authoritative one.
+    var attributes = '';
+    attributes += /\swidth\s*=/.test(tag) ? '' : ' width="' + size.width + '"';
+    attributes += /\sheight\s*=/.test(tag) ? '' : ' height="' + size.height + '"';
+    if (attributes) tag = tag.replace(/>$/, attributes + '>');
+    var wanted = { width: ' width="' + size.width + '"', height: ' height="' + size.height + '"' };
+    tag = tag.replace(/\swidth\s*=\s*["'][^"']*["']/i, function () { return wanted.width; });
+    tag = tag.replace(/\sheight\s*=\s*["'][^"']*["']/i, function () { return wanted.height; });
   }
   var background = options.background;
   if (background && background !== 'transparent' && background !== 'none') {
     var fill = escapeAttribute(background);
     var rect = box
       ? '<rect x="' + box.x + '" y="' + box.y + '" width="' + box.width + '" height="' + box.height + '" fill="' + fill + '"/>'
-      : '<rect width="100%" height="100%" fill="' + fill + '"/>';
+      : (size ? '<rect x="0" y="0" width="' + size.width + '" height="' + size.height + '" fill="' + fill + '"/>'
+        : '<rect width="100%" height="100%" fill="' + fill + '"/>');
     tag += rect;
   }
   if (tag === match[0]) return input;

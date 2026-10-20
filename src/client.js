@@ -235,6 +235,15 @@ function localizeEntry(entry) {
   entry.btnFullscreen.setAttribute('aria-label', t(lang, 'fullscreen'));
   entry.btnDownload.textContent = t(lang, 'downloadSvg');
   entry.btnDownload.setAttribute('aria-label', t(lang, 'downloadSvg'));
+  entry.btnZoomOut.textContent = t(lang, 'zoomOut');
+  entry.btnZoomOut.setAttribute('aria-label', t(lang, 'zoomOut'));
+  entry.btnZoomOut.setAttribute('title', t(lang, 'zoomOut'));
+  entry.btnZoomIn.textContent = t(lang, 'zoomIn');
+  entry.btnZoomIn.setAttribute('aria-label', t(lang, 'zoomIn'));
+  entry.btnZoomIn.setAttribute('title', t(lang, 'zoomIn'));
+  entry.btnZoomReset.textContent = t(lang, 'resetZoom');
+  entry.btnZoomReset.setAttribute('aria-label', t(lang, 'resetZoom'));
+  entry.btnZoomReset.setAttribute('title', t(lang, 'resetZoom'));
   entry.pre.setAttribute('aria-label', t(lang, 'sourceLabel'));
   entry.statusEl.setAttribute('aria-label', t(lang, 'statusLabel'));
   if (entry.pane) entry.pane.setAttribute('aria-label', t(lang, 'paneLabel'));
@@ -323,9 +332,16 @@ function enhanceInfo(info) {
 
   const actions = doc.createElement('div');
   actions.className = 'dsh-pm-actions';
+  // Explicit zoom controls for the inline diagram. Without them the only ways to zoom were
+  // Ctrl+wheel and the +/-/0 keys, which no discoverable control pointed at - the reported
+  // "zoom buttons do not respond" symptom. They drive the same zoomInlineAt() path, so the
+  // anchoring, the clamping and the live region behave exactly like the wheel.
+  const btnZoomOut = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
+  const btnZoomIn = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
+  const btnZoomReset = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
   const btnFullscreen = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null);
   const btnDownload = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null);
-  actions.append(btnFullscreen, btnDownload);
+  actions.append(btnZoomOut, btnZoomIn, btnZoomReset, btnFullscreen, btnDownload);
 
   bar.append(badge, btnDiagram, btnCode, actions);
 
@@ -365,6 +381,9 @@ function enhanceInfo(info) {
     statusEl,
     btnDiagram,
     btnCode,
+    btnZoomIn,
+    btnZoomOut,
+    btnZoomReset,
     btnFullscreen,
     btnDownload,
     actions,
@@ -400,9 +419,34 @@ function enhanceInfo(info) {
   const onCode = () => setView(entry, 'code');
   const onFullscreen = () => openViewer(entry);
   const onDownload = () => downloadEntry(entry);
+  // The zoom buttons anchor on the centre of the pane, exactly like the +/- keys do, so a
+  // click and a keypress produce the same result.
+  const paneCentre = () => {
+    const width = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
+    const height = entry.pane && entry.pane.clientHeight ? entry.pane.clientHeight : 0;
+    return { x: width / 2, y: height / 2 };
+  };
+  const onZoomIn = () => {
+    const point = paneCentre();
+    if (!zoomInlineAt(entry, ZOOM_STEP, point.x, point.y)) {
+      // Already at the maximum: re-apply so the state, the aria-label and the live region
+      // still agree, instead of silently doing nothing.
+      applyInlineZoom(entry);
+    }
+  };
+  const onZoomOut = () => {
+    const point = paneCentre();
+    if (!zoomInlineAt(entry, 1 / ZOOM_STEP, point.x, point.y)) {
+      applyInlineZoom(entry);
+    }
+  };
+  const onZoomReset = () => resetInlineZoom(entry);
   entry.listeners.push(
     [btnDiagram, 'click', onDiagram],
     [btnCode, 'click', onCode],
+    [btnZoomOut, 'click', onZoomOut],
+    [btnZoomIn, 'click', onZoomIn],
+    [btnZoomReset, 'click', onZoomReset],
     [btnFullscreen, 'click', onFullscreen],
     [btnDownload, 'click', onDownload],
   );

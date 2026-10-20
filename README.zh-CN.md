@@ -1,6 +1,13 @@
 # dsh-pele-mermaid
 
-[English](README.md) | 简体中文
+[English](README.md) | 简体中文 · [GitHub](https://github.com/lsy1998/dsh-pele-mermaid) · [Issues](https://github.com/lsy1998/dsh-pele-mermaid/issues)
+
+```powershell
+git clone https://github.com/lsy1998/dsh-pele-mermaid.git
+cd dsh-pele-mermaid
+npm install
+npm run build
+```
 
 在 DeepSeek Harness（DSH）Web 界面中用 **Pele** 把 Mermaid 围栏代码块渲染为 SVG 图表，
 **不打包也不加载 mermaid.js 运行时**。
@@ -54,19 +61,28 @@
 
 `desktop` profile 由 DSH 桌面 / Web 应用管理，请从应用内安装：
 
-1. 打开 DSH Web 界面，在侧边栏选择 **Plugins**（插件）页面。
-2. 选择安装插件，指向本包所在的绝对目录：
-   `C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid`
-3. 等待执行完成，并启用它新增的 bundle。
-4. 重启 DSH Web 或刷新页面，然后打开包含 Mermaid 代码块的会话。
+1. 克隆仓库并构建：
+
+   ```powershell
+   git clone https://github.com/lsy1998/dsh-pele-mermaid.git
+   cd dsh-pele-mermaid
+   npm install
+   npm run build
+   ```
+
+2. 打开 DSH Web 界面，在侧边栏选择 **Plugins**（插件）页面。
+3. 选择安装插件，指向刚才克隆下来的绝对目录，例如 `C:\path\to\dsh-pele-mermaid`
+   （可用 `Resolve-Path` 查看）。
+4. 等待执行完成，并启用它新增的 bundle。
+5. 重启 DSH Web 或刷新页面，然后打开包含 Mermaid 代码块的会话。
 
 应用会自行执行包管理器调用并注册新的 bundle。等价的命令是：
 
 ```powershell
-dsh plugin --profile desktop add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+dsh plugin --profile desktop add -w --save-exact <dsh-pele-mermaid 的绝对路径>
 ```
 
-> **已核实的注意事项。** 独立 `dsh` CLI 会拒绝 `desktop` profile。在本次交付机器上
+> **已核实的注意事项。** 独立 `dsh` CLI 会拒绝 `desktop` profile：
 > `dsh plugin --profile desktop --help` 以状态码 1 退出，并输出
 > `error: profile "desktop" is managed exclusively by the Electron application`；该限制
 > （`rejectElectronProfile`）同时存在于全局安装的 `@deepseek-ai/dsh` `0.1.7-rc.1` 与随应用
@@ -76,13 +92,13 @@ dsh plugin --profile desktop add -w --save-exact C:\Users\nx017142\Projects\Exam
 ### 命令行（web profile）
 
 ```powershell
-dsh plugin --profile web add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+dsh plugin --profile web add -w --save-exact <dsh-pele-mermaid 的绝对路径>
 ```
 
 若没有全局 `dsh` 命令，可通过 `npx` 调用已发布的 CLI（需要网络）：
 
 ```powershell
-npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w --save-exact <dsh-pele-mermaid 的绝对路径>
 ```
 
 安装后请重启 DSH Web 或刷新页面。
@@ -273,23 +289,6 @@ npm run test:offline
   通过 Pele 重绘图表。
 - **安装脚本拒绝某个路径。** 在 Windows 上，`--profile` 或 `--source` 值包含 `& | < > ^ % ! ( )`
   或引号时会被拒绝；请改用不含这些字符的路径。
-
-## 文档核实
-
-本 README 中的命令已于 2026-10-19/20 在交付机器上核对：
-
-- 已实际执行：`dsh --version`（0.1.7-rc.1）、`dsh --help`、`dsh plugin --profile desktop --help`
-  （以状态码 1 退出并输出上文引用的“由应用独占管理”错误）、`dsh plugin --profile web`（被接受，
-  随后提示需要 pnpm 参数）、`node --version`、`npm --version`、`pnpm --version`，以及
-  `node bin/dsh-pele-mermaid.mjs --help` / `... install --profile desktop`（打印拒绝信息并以
-  状态码 1 退出）。
-- `npm pack --dry-run --ignore-scripts` 成功执行并列出上述 11 个文件（退出码 0）。
-- 未在此环境执行（文档作者不得写入 DSH profile，也不得联网）：真正执行安装的
-  `dsh plugin ... add/update/remove` 各形式与 `npx` 形式。其语法来自 `dsh --help`、
-  `dsh plugin` 实现与安装脚本源码。
-- `npm install`、`npm run build`、`npm run check`、`npm test`、`npm run test:offline` 是
-  `package.json` 中定义的包脚本；请在你的检出目录中运行以确认。`npm run check`
-  （语法检查 + 离线测试套件）是沙箱安全路径。
 
 ## 许可
 

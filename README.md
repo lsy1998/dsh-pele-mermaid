@@ -1,6 +1,13 @@
 # dsh-pele-mermaid
 
-[简体中文](README.zh-CN.md) | English
+[简体中文](README.zh-CN.md) | English · [GitHub](https://github.com/lsy1998/dsh-pele-mermaid) · [Issues](https://github.com/lsy1998/dsh-pele-mermaid/issues)
+
+```powershell
+git clone https://github.com/lsy1998/dsh-pele-mermaid.git
+cd dsh-pele-mermaid
+npm install
+npm run build
+```
 
 Render Mermaid fenced code blocks in the DeepSeek Harness (DSH) Web GUI as SVG diagrams with
 **Pele** — no mermaid.js runtime is bundled or loaded.
@@ -67,37 +74,45 @@ The plugin ships as a DSH profile plugin bundle. Its `package.json` declares
 The `desktop` profile is managed by the DSH Desktop / DSH Web application, so install from the
 app:
 
-1. Open the DSH Web GUI and select **Plugins** in the sidebar.
-2. Install a plugin and point it at this absolute package directory:
-   `C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid`
-3. Let the run finish and enable the bundle it added.
-4. Restart DSH Web, or refresh the page, and open a session that contains a Mermaid block.
+1. Clone the repository and build it:
+
+   ```powershell
+   git clone https://github.com/lsy1998/dsh-pele-mermaid.git
+   cd dsh-pele-mermaid
+   npm install
+   npm run build
+   ```
+
+2. Open the DSH Web GUI and select **Plugins** in the sidebar.
+3. Install a plugin and point it at the absolute package directory you just cloned, for example
+   `C:\path\to\dsh-pele-mermaid` (`Resolve-Path` prints it).
+4. Let the run finish and enable the bundle it added.
+5. Restart DSH Web, or refresh the page, and open a session that contains a Mermaid block.
 
 The app performs the package-manager call itself and registers the new bundle. The equivalent
 invocation is:
 
 ```powershell
-dsh plugin --profile desktop add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+dsh plugin --profile desktop add -w --save-exact <absolute-path-to-dsh-pele-mermaid>
 ```
 
-> **Verified caveat.** A standalone `dsh` CLI refuses the `desktop` profile. On this delivery
-> machine `dsh plugin --profile desktop --help` exits with status 1 and prints
-> `error: profile "desktop" is managed exclusively by the Electron application`; the guard
-> (`rejectElectronProfile`) is present in both the globally installed `@deepseek-ai/dsh`
-> `0.1.7-rc.1` and the bundled `0.2.1-rc.2`. Run that form from the app-managed context (the
-> **Plugins** page), not from a plain terminal. `--profile web` is the CLI-installable
-> alternative.
+> **Verified caveat.** A standalone `dsh` CLI refuses the `desktop` profile:
+> `dsh plugin --profile desktop --help` exits with status 1 and prints
+> `error: profile "desktop" is managed exclusively by the Electron application`; the guard is
+> present in both the globally installed `@deepseek-ai/dsh` `0.1.7-rc.1` and the bundled
+> `0.2.1-rc.2`. Run that form from the app-managed context (the **Plugins** page), not from a
+> plain terminal. `--profile web` is the CLI-installable alternative.
 
 ### Command line (web profile)
 
 ```powershell
-dsh plugin --profile web add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+dsh plugin --profile web add -w --save-exact <absolute-path-to-dsh-pele-mermaid>
 ```
 
 Without a global `dsh` command, invoke the published CLI through `npx` (needs network access):
 
 ```powershell
-npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w --save-exact C:\Users\nx017142\Projects\Examples\dsh-pele-mermaid
+npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w --save-exact <absolute-path-to-dsh-pele-mermaid>
 ```
 
 Restart DSH Web or refresh the page after installing.
@@ -284,9 +299,8 @@ npm run test:offline
   that block node's per-file test child processes**, where `npm test` fails with a `spawn EPERM`
   error; `npm run check` already uses it.
 
-On PowerShell hosts that block `npm.ps1`, use `npm.cmd` instead. In this delivery workspace
-`.npmrc` points the npm cache at `.npm-cache`; sandboxed builds may also need
-`--ignore-scripts` because npm lifecycle child processes can be blocked.
+On PowerShell hosts that block `npm.ps1`, use `npm.cmd` instead. Sandboxed environments that
+block npm lifecycle scripts may need `--ignore-scripts` (the esbuild binary ships prebuilt).
 
 ## Troubleshooting
 
@@ -301,23 +315,6 @@ On PowerShell hosts that block `npm.ps1`, use `npm.cmd` instead. In this deliver
   without a re-render; font or geometry changes re-render the diagrams through Pele.
 - **The installer rejects a path.** On Windows it refuses `--profile` or `--source` values that
   contain `& | < > ^ % ! ( )` or quotes; use a path without those characters.
-
-## Documentation verification
-
-Commands in this README were checked on the delivery machine on 2026-10-19/20:
-
-- Executed: `dsh --version` (0.1.7-rc.1), `dsh --help`, `dsh plugin --profile desktop --help`
-  (exits 1 with the app-managed profile error quoted above), `dsh plugin --profile web` (accepted,
-  then asks for pnpm arguments), `node --version`, `npm --version`, `pnpm --version`, and
-  `node bin/dsh-pele-mermaid.mjs --help` / `... install --profile desktop` (prints the refusal
-  and exits 1).
-- Not executed here because the documentation author must not write to the DSH profile or use
-  the network: the installing `dsh plugin ... add/update/remove` forms and the `npx` form. Their
-  syntax comes from `dsh --help`, the `dsh plugin` implementation and the installer source.
-- `npm pack --dry-run --ignore-scripts` succeeds and lists exactly the 11 files above (exit 0).
-- `npm install`, `npm run build`, `npm run check`, `npm test` and `npm run test:offline` are the
-  package scripts defined in `package.json`; run them on your checkout to confirm. `npm run
-  check` (syntax checks plus the offline suite) is the sandbox-safe path.
 
 ## License
 

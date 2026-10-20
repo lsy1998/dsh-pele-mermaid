@@ -15,6 +15,7 @@ import {
   resetPeleRuntimeForTesting,
 } from './runtime.js';
 import { ensureStandaloneSvg, svgFileName, downloadSvg } from './svg.js';
+import { MIN_SCALE, MAX_SCALE, ZOOM_STEP, clamp, createZoomState, measureSvg, round } from './zoom.js';
 import { createViewer } from './viewer.js';
 import {
   codeSource,
@@ -234,6 +235,10 @@ function localizeEntry(entry) {
   entry.btnDownload.setAttribute('aria-label', t(lang, 'downloadSvg'));
   entry.pre.setAttribute('aria-label', t(lang, 'sourceLabel'));
   entry.statusEl.setAttribute('aria-label', t(lang, 'statusLabel'));
+  if (entry.pane) entry.pane.setAttribute('aria-label', t(lang, 'paneLabel'));
+  if (entry.zoomStatus) {
+    entry.zoomStatus.setAttribute('aria-label', t(lang, 'zoomStatus', { zoom: entry.zoomStatus.textContent || '100%' }));
+  }
   if (entry.messageKey) {
     const message = t(lang, entry.messageKey, entry.messageParams || {});
     entry.pane.textContent = message;
@@ -327,6 +332,10 @@ function enhanceInfo(info) {
   const pane = doc.createElement('div');
   pane.className = 'dsh-pm-pane';
   pane.dataset.state = 'loading';
+  // The pane is a focusable, keyboard-operable viewport onto the diagram.
+  pane.setAttribute('tabindex', '0');
+  pane.setAttribute('role', 'group');
+  pane.setAttribute('aria-label', t(state.lang, 'paneLabel'));
   const errorEl = doc.createElement('div');
   errorEl.className = 'dsh-pm-error';
   const statusEl = doc.createElement('div');
@@ -334,7 +343,13 @@ function enhanceInfo(info) {
   statusEl.setAttribute('role', 'status');
   statusEl.setAttribute('aria-live', 'polite');
   statusEl.setAttribute('aria-atomic', 'true');
-  body.append(pane, errorEl, statusEl);
+  // The current zoom, exposed to assistive technology (R13).
+  const zoomStatus = doc.createElement('span');
+  zoomStatus.className = 'dsh-pm-sr-only';
+  zoomStatus.setAttribute('aria-live', 'polite');
+  zoomStatus.setAttribute('aria-label', t(state.lang, 'zoomStatus', { zoom: '100%' }));
+  zoomStatus.textContent = '100%';
+  body.append(pane, errorEl, statusEl, zoomStatus);
 
   const entry = {
     code: codeEl,
@@ -366,6 +381,12 @@ function enhanceInfo(info) {
     queued: false,
     mounted: null,
     disposed: false,
+    // Per-block zoom/pan state (SPEC R9 parity for the inline pane).
+    zoom: createZoomState(),
+    zoomNatural: { width: 0, height: 0 },
+    zoomFit: 1,
+    zoomStatus,
+    drag: null,
   };
   entry.type = diagramLabel(info.source, currentDetectType());
 
@@ -379,7 +400,20 @@ function enhanceInfo(info) {
     [btnFullscreen, 'click', onFullscreen],
     [btnDownload, 'click', onDownload],
   );
-  for (const [element, type, listener] of entry.listeners) element.addEventListener(type, listener);
+  // Inline pane interactions: Ctrl/Meta + wheel zooms at the pointer, a plain
+  // wheel is left to the page, drag pans, and the keyboard drives the same state.
+  entry.listeners.push(
+    [pane, 'wheel', (event) => onPaneWheel(entry, event), { passive: false }],
+    [pane, 'pointerdown', (event) => onPanePointerDown(entry, event)],
+    [pane, 'pointermove', (event) => onPanePointerMove(entry, event)],
+    [pane, 'pointerup', (event) => onPanePointerUp(entry, event)],
+    [pane, 'pointercancel', (event) => onPanePointerUp(entry, event)],
+    [pane, 'keydown', (event) => onPaneKeydown(entry, event)],
+  );
+  for (const entryItem of entry.listeners) {
+    const [element, type, listener, options] = entryItem;
+    element.addEventListener(type, listener, options);
+  }
 
   parent.insertBefore(wrapper, pre);
   body.insertBefore(pre, errorEl);
@@ -397,6 +431,259 @@ function enhanceInfo(info) {
   state.processed.add(codeEl);
   scheduleRender(entry);
   return entry;
+}
+
+/* ------------------------------------------------------------------ *
+ * Inline pane zoom/pan (SPEC R9 parity, keyboard accessible)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The natural (intrinsic) size of the diagram inside the pane.
+ * This is the size the SVG declares, not the size it is displayed at.
+ */
+function inlineNatural(entry) {
+  const svg = entry.pane && entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
+  if (!svg) return entry.zoomNatural;
+  const size = measureSvg(svg);
+  if (size.width > 0 && size.height > 0) return size;
+  return entry.zoomNatural && entry.zoomNatural.width > 0 ? entry.zoomNatural : { width: 640, height: 400 };
+}
+
+/**
+ * The scale that fits the diagram into the pane width.
+ * The stylesheet's `max-width:100%` used to do this implicitly; the zoom
+ * state now multiplies it, so the unzoomed diagram still looks exactly as it
+ * did before.
+ */
+function inlineFitScale(entry) {
+  const natural = entry.zoomNatural || { width: 0, height: 0 };
+  const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
+  if (clientWidth > 0 && natural.width > 0) return Math.min(1, clientWidth / natural.width);
+  return entry.zoomFit > 0 ? entry.zoomFit : 1;
+}
+
+/** The effective on-screen scale (fit scale * user zoom). */
+function inlineScale(entry) {
+  return inlineFitScale(entry) * entry.zoom.scale;
+}
+
+/**
+ * The layout of the diagram inside the scroll container for a given effective
+ * scale: the displayed size and the centring offset the stylesheet applies
+ * when the content is narrower than the pane.
+ */
+function inlineLayout(entry, effectiveScale) {
+  const natural = entry.zoomNatural || { width: 0, height: 0 };
+  const width = natural.width * effectiveScale;
+  const height = natural.height * effectiveScale;
+  const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
+  const clientHeight = entry.pane && entry.pane.clientHeight ? entry.pane.clientHeight : 0;
+  return {
+    natural,
+    width,
+    height,
+    marginX: clientWidth > 0 && clientWidth > width ? (clientWidth - width) / 2 : 0,
+    marginY: clientHeight > 0 && clientHeight > height ? (clientHeight - height) / 2 : 0,
+  };
+}
+
+/**
+ * Write the current zoom state onto the rendered SVG and the accessibility tree.
+ * The effective scale becomes the SVG's layout size (so the pane can scroll to
+ * the enlarged content) and the pan offset is a transform on top of it.
+ */
+function applyInlineZoom(entry) {
+  if (!entry || !entry.pane) return;
+  const svg = entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
+  if (!svg) return;
+  const natural = inlineNatural(entry);
+  entry.zoomNatural = natural;
+  entry.zoomFit = inlineFitScale(entry);
+  const zoom = entry.zoom;
+  const effective = inlineScale(entry);
+  if (effective === 1 && zoom.tx === 0 && zoom.ty === 0) {
+    // At the natural size the stylesheet stays in charge, exactly as before.
+    svg.style.width = '';
+    svg.style.height = '';
+    svg.style.maxWidth = '';
+    svg.style.minWidth = '';
+    svg.style.transform = '';
+    // The pane only gets a bounded height once the diagram is enlarged, so an
+    // unzoomed block still grows with its diagram as it always did.
+    entry.pane.style.maxHeight = '';
+  } else {
+    svg.style.width = round(natural.width * effective, 2) + 'px';
+    svg.style.height = round(natural.height * effective, 2) + 'px';
+    svg.style.maxWidth = 'none';
+    svg.style.minWidth = '0';
+    svg.style.transform = 'translate(' + round(zoom.tx) + 'px, ' + round(zoom.ty) + 'px)';
+    svg.style.transformOrigin = '0 0';
+    // A bounded pane makes the enlarged diagram scrollable instead of pushing
+    // the rest of the message out of the view.
+    if (!entry.pane.style.maxHeight) entry.pane.style.maxHeight = '70vh';
+  }
+  if (entry.pane.dataset) {
+    entry.pane.dataset.zoom = String(Math.round(zoom.scale * 100));
+    entry.pane.dataset.panX = String(Math.round(zoom.tx));
+    entry.pane.dataset.panY = String(Math.round(zoom.ty));
+  }
+  updateZoomStatus(entry);
+}
+
+/** Announce the current zoom through the polite live region (R13). */
+function updateZoomStatus(entry) {
+  if (!entry || !entry.zoomStatus) return;
+  const percent = Math.round(entry.zoom.scale * 100) + '%';
+  entry.zoomStatus.textContent = percent;
+  entry.zoomStatus.setAttribute('aria-label', tr('zoomStatus', { zoom: percent }));
+}
+
+/**
+ * Zoom the inline diagram around the pane point (px, py): the content point
+ * under the pointer stays under the pointer.
+ */
+function zoomInlineAt(entry, factor, px, py) {
+  if (!entry || !entry.zoom) return false;
+  const zoom = entry.zoom;
+  const previous = zoom.scale;
+  const next = clamp(previous * factor, MIN_SCALE, MAX_SCALE);
+  if (next === previous) return false;
+  const fit = inlineFitScale(entry);
+  const before = inlineLayout(entry, previous * fit);
+  const after = inlineLayout(entry, next * fit);
+  const x = Number.isFinite(px) ? px : 0;
+  const y = Number.isFinite(py) ? py : 0;
+  const scrollLeft = entry.pane.scrollLeft || 0;
+  const scrollTop = entry.pane.scrollTop || 0;
+  // The natural (unscaled) content coordinate under the pointer.
+  const contentX = (x - before.marginX - zoom.tx + scrollLeft) / (previous * fit);
+  const contentY = (y - before.marginY - zoom.ty + scrollTop) / (previous * fit);
+  zoom.setScale(next);
+  applyInlineZoom(entry);
+  // Move the scroll offsets so the anchored point stays under the pointer.
+  entry.pane.scrollLeft = contentX * next * fit + after.marginX + zoom.tx - x;
+  entry.pane.scrollTop = contentY * next * fit + after.marginY + zoom.ty - y;
+  return true;
+}
+
+/** Pan the inline diagram by (dx, dy) pointer pixels. */
+function panInline(entry, dx, dy) {
+  if (!entry || !entry.zoom) return;
+  const zoom = entry.zoom;
+  zoom.panBy(dx, dy);
+  applyInlineZoom(entry);
+}
+
+/** Reset the inline zoom/pan to the natural size. */
+function resetInlineZoom(entry) {
+  if (!entry || !entry.zoom) return;
+  entry.zoom.reset();
+  if (entry.pane) {
+    entry.pane.scrollLeft = 0;
+    entry.pane.scrollTop = 0;
+  }
+  applyInlineZoom(entry);
+}
+
+/** Ctrl/Meta + wheel zooms at the pointer; a plain wheel is left alone. */
+function onPaneWheel(entry, event) {
+  if (!event) return;
+  if (!event.ctrlKey && !event.metaKey) return; // the page must keep scrolling
+  if (typeof event.preventDefault === 'function') event.preventDefault();
+  let px = Number(event.clientX) || 0;
+  let py = Number(event.clientY) || 0;
+  if (entry.pane && typeof entry.pane.getBoundingClientRect === 'function') {
+    const rect = entry.pane.getBoundingClientRect();
+    if (rect) {
+      px -= rect.left;
+      py -= rect.top;
+    }
+  }
+  const delta = typeof event.deltaY === 'number' ? event.deltaY : 0;
+  let factor = Math.exp(-delta * 0.0015);
+  if (!Number.isFinite(factor) || factor <= 0 || factor === 1) factor = ZOOM_STEP;
+  zoomInlineAt(entry, factor, px, py);
+}
+
+function onPanePointerDown(entry, event) {
+  if (!event) return;
+  if (event.button != null && event.button !== 0) return;
+  if (event.pointerType === 'touch') return; // touch keeps the native scrolling
+  entry.drag = {
+    x: Number(event.clientX) || 0,
+    y: Number(event.clientY) || 0,
+    tx: entry.zoom.tx,
+    ty: entry.zoom.ty,
+    scrollLeft: entry.pane.scrollLeft || 0,
+    scrollTop: entry.pane.scrollTop || 0,
+  };
+  if (entry.pane.setAttribute) entry.pane.setAttribute('data-dragging', 'true');
+  if (typeof entry.pane.focus === 'function') {
+    try { entry.pane.focus(); } catch (error) { /* focus is best-effort */ }
+  }
+  if (typeof event.preventDefault === 'function') event.preventDefault();
+}
+
+function onPanePointerMove(entry, event) {
+  const drag = entry.drag;
+  if (!drag || !event) return;
+  const dx = (Number(event.clientX) || 0) - drag.x;
+  const dy = (Number(event.clientY) || 0) - drag.y;
+  const zoom = entry.zoom;
+  const fit = inlineFitScale(entry);
+  const layout = inlineLayout(entry, zoom.scale * fit);
+  const pane = entry.pane;
+  const clientWidth = pane.clientWidth || 0;
+  const clientHeight = pane.clientHeight || 0;
+  // The pane size is unknown (a detached or unlaid-out pane): fall back to a
+  // translation, which always moves the diagram.
+  const measured = clientWidth > 0 && clientHeight > 0;
+  // When the diagram is larger than the pane the pan is a scroll, otherwise it
+  // is a translation of the content inside the pane.
+  if (measured && layout.width > clientWidth) pane.scrollLeft = drag.scrollLeft - dx;
+  else zoom.tx = drag.tx + dx;
+  if (measured && layout.height > clientHeight) pane.scrollTop = drag.scrollTop - dy;
+  else zoom.ty = drag.ty + dy;
+  applyInlineZoom(entry);
+  if (typeof event.preventDefault === 'function') event.preventDefault();
+}
+
+function onPanePointerUp(entry) {
+  if (!entry.drag) return;
+  entry.drag = null;
+  if (entry.pane && entry.pane.removeAttribute) entry.pane.removeAttribute('data-dragging');
+}
+
+function onPaneKeydown(entry, event) {
+  if (!event) return;
+  const key = event.key;
+  const pane = entry.pane;
+  const clientWidth = (pane && pane.clientWidth) || 0;
+  const clientHeight = (pane && pane.clientHeight) || 0;
+  const stop = () => {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+  };
+  if (key === '+' || key === '=') {
+    stop();
+    zoomInlineAt(entry, ZOOM_STEP, clientWidth / 2, clientHeight / 2);
+    return;
+  }
+  if (key === '-' || key === '_') {
+    stop();
+    zoomInlineAt(entry, 1 / ZOOM_STEP, clientWidth / 2, clientHeight / 2);
+    return;
+  }
+  if (key === '0') {
+    stop();
+    resetInlineZoom(entry);
+    return;
+  }
+  const step = event.shiftKey ? 60 : 20;
+  if (key === 'ArrowLeft') { stop(); panInline(entry, -step, 0); }
+  else if (key === 'ArrowRight') { stop(); panInline(entry, step, 0); }
+  else if (key === 'ArrowUp') { stop(); panInline(entry, 0, -step); }
+  else if (key === 'ArrowDown') { stop(); panInline(entry, 0, step); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -443,6 +730,10 @@ function formatRenderFailure(error) {
 function finalizeRendered(entry, result, generation) {
   if (!isLive(entry) || generation !== entry.generation) return;
   entry.lastRendered = entry.source;
+  // A fresh render replaces the diagram, so the per-block zoom/pan state starts
+  // over (the previous transform belonged to the old SVG). resetInlineZoom also
+  // re-measures the fit scale for the new SVG.
+  resetInlineZoom(entry);
   entry.wrapper.dataset.state = 'ready';
   entry.pane.dataset.state = 'ready';
   entry.messageKey = null;
@@ -779,15 +1070,53 @@ function openViewer(entry) {
   if (!isLive(entry)) return;
   const svg = entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
   if (!svg) return;
+  // Remember where the inline pane was, so closing the overlay can restore it.
+  entry.inlineRestore = {
+    scrollLeft: entry.pane.scrollLeft || 0,
+    scrollTop: entry.pane.scrollTop || 0,
+    zoom: entry.zoom ? entry.zoom.snapshot() : null,
+  };
+  // The overlay continues from the EFFECTIVE on-screen scale of the inline
+  // diagram (the fit scale times the user zoom), so the transition is seamless
+  // even when the diagram is wider than the column.
+  const effective = inlineScale(entry);
   try {
     ensureViewer().open({
       svg: svg.outerHTML,
       source: entry.source,
       type: entry.type || 'mermaid',
       trigger: entry.btnFullscreen,
+      // The overlay continues from the inline zoom instead of resetting to
+      // "fit to window", so the transition is seamless.
+      zoom: { scale: effective, tx: 0, ty: 0 },
+      onClose: () => restoreInlineAfterViewer(entry),
     });
   } catch {
     /* viewer failures must never break the diagram chrome */
+  }
+}
+
+/**
+ * Restore the inline pane after the fullscreen overlay closes: the previous
+ * scroll offset and zoom come back, the diagram stays visible, and the trigger
+ * keeps the focus (the viewer restores it - see src/viewer.js).
+ */
+function restoreInlineAfterViewer(entry) {
+  if (!entry || entry.disposed) return;
+  const saved = entry.inlineRestore;
+  if (!saved) return;
+  if (saved.zoom && entry.zoom) entry.zoom.restore(saved.zoom);
+  if (entry.pane) {
+    applyInlineZoom(entry);
+    if (entry.pane.scrollLeft !== undefined) entry.pane.scrollLeft = saved.scrollLeft;
+    if (entry.pane.scrollTop !== undefined) entry.pane.scrollTop = saved.scrollTop;
+    if (typeof entry.pane.scrollIntoView === 'function') {
+      try {
+        entry.pane.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      } catch {
+        /* scrolling into view is best-effort */
+      }
+    }
   }
 }
 
@@ -825,9 +1154,9 @@ function disposeEntry(entry, restore = true) {
   }
   entry.queued = false;
   destroyMounted(entry);
-  for (const [element, type, listener] of entry.listeners) {
+  for (const [element, type, listener, options] of entry.listeners) {
     try {
-      element.removeEventListener(type, listener);
+      element.removeEventListener(type, listener, options);
     } catch {
       /* ignore */
     }

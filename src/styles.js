@@ -34,7 +34,9 @@ export const CSS = `
 .dsh-pm-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
 .dsh-pm-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .dsh-pm-body{padding:0}
-.dsh-pm-pane{display:block;padding:10px 12px;overflow-x:auto}
+.dsh-pm-pane{display:block;padding:10px 12px;overflow:auto;cursor:grab;touch-action:pan-x pan-y}
+.dsh-pm-pane[data-dragging='true']{cursor:grabbing}
+.dsh-pm-pane:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:-2px}
 .dsh-pm-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
 .dsh-pm-pane[data-state='loading']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:12px 14px;white-space:pre-wrap}
 .dsh-pm-pane[data-state='error']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:12px 14px;white-space:pre-wrap}
@@ -59,7 +61,7 @@ body[data-ds-dark-theme] .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-
 .dsh-pm-viewport[data-dragging='true']{cursor:grabbing}
 .dsh-pm-stage{position:absolute;left:50%;top:50%;transform-origin:center;will-change:transform}
 .dsh-pm-stage svg{display:block;max-width:none;height:auto;background:transparent}
-@media (prefers-reduced-motion:reduce){.dsh-pm *,.dsh-pm-viewer *{animation:none!important;transition:none!important}}
+@media (prefers-reduced-motion:reduce){.dsh-pm *,.dsh-pm-viewer *,.dsh-pm-viewer{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media (forced-colors:active){.dsh-pm-btn:focus-visible{outline-color:Highlight}}
 `;
 

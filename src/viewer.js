@@ -3,7 +3,18 @@
  *
  * The overlay is built lazily, traps focus while open, restores focus to the
  * trigger on close and destroys every listener and node on `destroy()`.
+ *
+ * The zoom/pan maths lives in src/zoom.js and is shared with the inline pane
+ * (src/client.js) - this module only owns the overlay DOM and its behaviour.
  */
+
+import {
+  ZOOM_STEP,
+  applyTransform,
+  createZoomState,
+  measureSvg,
+  round,
+} from './zoom.js';
 
 var FALLBACK_MESSAGES = {
   viewerLabel: 'Fullscreen Pele diagram viewer',
@@ -17,21 +28,7 @@ var FALLBACK_MESSAGES = {
 };
 
 var INTERPOLATE_RE = /\{(\w+)\}/g;
-var MIN_SCALE = 0.1;
-var MAX_SCALE = 8;
-var ZOOM_STEP = 1.25;
 var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
-function clamp(value, min, max) {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
-}
-
-function round(value, digits) {
-  var factor = Math.pow(10, digits || 2);
-  return Math.round(value * factor) / factor;
-}
 
 export function createViewer(deps) {
   var options = deps || {};
@@ -60,15 +57,13 @@ export function createViewer(deps) {
   var built = false;
   var isOpenState = false;
   var destroyed = false;
-  var scale = 1;
-  var tx = 0;
-  var ty = 0;
-  var naturalWidth = 0;
-  var naturalHeight = 0;
+  // Shared zoom/pan state (src/zoom.js) - the single source of the maths.
+  var zoom = createZoomState();
   var trigger = null;
   var bar = null;
   var drag = null;
   var currentType = 'diagram';
+  var closeHandler = null;
   var listeners = [];
 
   function listen(target, type, handler, listenerOptions) {
@@ -211,34 +206,9 @@ export function createViewer(deps) {
     svgEl = typeof stage.querySelector === 'function' ? stage.querySelector('svg') : (stage.firstElementChild || null);
   }
 
-  function readDimension(node, attribute) {
-    if (!node || typeof node.getAttribute !== 'function') return 0;
-    var raw = node.getAttribute(attribute);
-    if (!raw) return 0;
-    var value = parseFloat(raw);
-    return isFinite(value) && value > 0 ? value : 0;
-  }
-
   function measure() {
-    var width = readDimension(svgEl, 'width');
-    var height = readDimension(svgEl, 'height');
-    if ((!width || !height) && svgEl && typeof svgEl.getAttribute === 'function') {
-      var viewBox = svgEl.getAttribute('viewBox');
-      if (viewBox) {
-        var parts = String(viewBox).trim().split(/[\s,]+/).map(Number);
-        if (parts.length === 4) {
-          if (!width && isFinite(parts[2]) && parts[2] > 0) width = parts[2];
-          if (!height && isFinite(parts[3]) && parts[3] > 0) height = parts[3];
-        }
-      }
-    }
-    if ((!width || !height) && svgEl && typeof svgEl.getBoundingClientRect === 'function') {
-      var rect = svgEl.getBoundingClientRect();
-      if (!width && rect && rect.width > 0) width = rect.width;
-      if (!height && rect && rect.height > 0) height = rect.height;
-    }
-    naturalWidth = width > 0 ? width : 640;
-    naturalHeight = height > 0 ? height : 400;
+    var size = measureSvg(svgEl);
+    zoom.setNatural(size.width > 0 ? size.width : 640, size.height > 0 ? size.height : 400);
   }
 
   function viewportSize() {
@@ -251,29 +221,26 @@ export function createViewer(deps) {
 
   function apply() {
     if (!stage) return;
-    stage.style.transform = 'translate(' + round(tx) + 'px, ' + round(ty) + 'px) scale(' + round(scale, 4) + ')';
-    stage.style.transformOrigin = '0 0';
-    announce(Math.round(scale * 100) + '%');
+    applyTransform(stage, zoom, { mode: 'transform' });
+    announce(Math.round(zoom.scale * 100) + '%');
   }
 
   function center() {
     var size = viewportSize();
-    tx = (size.width - naturalWidth * scale) / 2;
-    ty = (size.height - naturalHeight * scale) / 2;
+    zoom.center(size.width, size.height);
     apply();
   }
 
   function fitToWindow() {
     var size = viewportSize();
-    var fitted = Math.min(size.width / naturalWidth, size.height / naturalHeight);
-    if (!isFinite(fitted) || fitted <= 0) fitted = 1;
-    scale = clamp(fitted, MIN_SCALE, MAX_SCALE);
-    center();
+    zoom.fitToWindow(size.width, size.height);
+    apply();
   }
 
   function resetToNatural() {
-    scale = clamp(1, MIN_SCALE, MAX_SCALE);
-    center();
+    var size = viewportSize();
+    zoom.resetToNatural(size.width, size.height);
+    apply();
   }
 
   function zoomBy(factor, clientX, clientY) {
@@ -281,24 +248,19 @@ export function createViewer(deps) {
     var size = viewportSize();
     var pointX = typeof clientX === 'number' ? clientX : size.width / 2;
     var pointY = typeof clientY === 'number' ? clientY : size.height / 2;
-    var next = clamp(scale * factor, MIN_SCALE, MAX_SCALE);
-    if (next === scale) return;
-    tx = pointX - (pointX - tx) * (next / scale);
-    ty = pointY - (pointY - ty) * (next / scale);
-    scale = next;
+    if (!zoom.zoomAtPoint(factor, pointX, pointY)) return;
     apply();
   }
 
   function panBy(dx, dy) {
-    tx += dx;
-    ty += dy;
+    zoom.panBy(dx, dy);
     apply();
   }
 
   function onPointerDown(event) {
     if (!isOpenState) return;
     if (event && event.button != null && event.button !== 0) return;
-    drag = { x: event.clientX, y: event.clientY, tx: tx, ty: ty };
+    drag = { x: event.clientX, y: event.clientY, tx: zoom.tx, ty: zoom.ty };
     if (event && event.pointerId != null && viewport && typeof viewport.setPointerCapture === 'function') {
       try { viewport.setPointerCapture(event.pointerId); } catch (error) { /* optional */ }
     }
@@ -307,8 +269,8 @@ export function createViewer(deps) {
 
   function onPointerMove(event) {
     if (!drag || !event) return;
-    tx = drag.tx + (event.clientX - drag.x);
-    ty = drag.ty + (event.clientY - drag.y);
+    zoom.tx = drag.tx + (event.clientX - drag.x);
+    zoom.ty = drag.ty + (event.clientY - drag.y);
     apply();
     if (typeof event.preventDefault === 'function') event.preventDefault();
   }
@@ -420,13 +382,24 @@ export function createViewer(deps) {
     if (!built) return;
     currentType = config.type || 'diagram';
     trigger = config.trigger || null;
+    // The caller may continue from its own zoom (the inline pane), so the
+    // transition into the overlay is seamless instead of a jump to "fit".
+    var requested = config.zoom && typeof config.zoom === 'object' ? config.zoom : null;
+    closeHandler = typeof config.onClose === 'function' ? config.onClose : null;
     refreshLabels();
     mountSvg(config.svg);
     attachOverlay();
     root.removeAttribute('hidden');
     isOpenState = true;
     measure();
-    fitToWindow();
+    if (requested && Number.isFinite(requested.scale) && requested.scale !== 1) {
+      // Continue from the caller's zoom, but re-center: the translate offsets
+      // live in a different coordinate space than the overlay's viewport.
+      zoom.setScale(requested.scale);
+      center();
+    } else {
+      fitToWindow();
+    }
     bindInteractions();
     if (typeof viewport.focus === 'function') {
       try { viewport.focus(); } catch (error) { /* focus is best-effort */ }
@@ -447,6 +420,13 @@ export function createViewer(deps) {
     detachOverlay();
     var back = trigger;
     trigger = null;
+    // Restore the caller's inline state before the focus moves back, so the
+    // user lands on the diagram they were looking at.
+    var onClose = closeHandler;
+    closeHandler = null;
+    if (onClose) {
+      try { onClose(); } catch (error) { /* the caller restores best-effort */ }
+    }
     if (back && typeof back.focus === 'function') {
       try { back.focus(); } catch (error) { /* the trigger may be gone */ }
     }

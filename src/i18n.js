@@ -35,6 +35,8 @@ export const MESSAGES = {
     limitStatus: 'Diagram not rendered: the source exceeds the configured limit. The source code is shown.',
     diagramTitle: 'Pele {type} diagram',
     downloaded: 'SVG downloaded.',
+    paneLabel: 'Inline diagram viewport. Use the mouse wheel with Control held to zoom, drag to pan, and the plus and minus keys to zoom.',
+    zoomStatus: 'Diagram zoom {zoom}',
   },
   'zh-CN': {
     viewOptions: 'Pele 图表控件',
@@ -64,6 +66,8 @@ export const MESSAGES = {
     limitStatus: '图表未渲染：源码超出限制，已显示源代码。',
     diagramTitle: 'Pele {type} 图',
     downloaded: 'SVG 已下载。',
+    paneLabel: '内联图表视口。按住 Ctrl 滚动鼠标滚轮可缩放，拖动可平移，可用加号和减号键缩放。',
+    zoomStatus: '图表缩放 {zoom}',
   },
 };
 

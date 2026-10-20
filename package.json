@@ -1,0 +1,57 @@
+{
+  "name": "dsh-pele-mermaid",
+  "version": "0.1.0",
+  "description": "Render Mermaid code blocks in the DeepSeek Harness Web UI as SVG with Pele (no mermaid.js runtime).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-pele-mermaid": "bin/dsh-pele-mermaid.mjs"
+  },
+  "files": [
+    "package.json",
+    "cordis.patch.yml",
+    "lib",
+    "bin",
+    "icon.svg",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check scripts/build.mjs && node --check lib/index.js && node --check lib/client.js && node --check lib/pele-runtime.js && node --check bin/dsh-pele-mermaid.mjs && node --check src/runtime.js && node --check src/svg.js && node --check src/viewer.js && npm run test:offline",
+    "test": "node --test test/",
+    "test:offline": "node --test --experimental-test-isolation=none \"test/**/*.test.mjs\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "mermaid",
+    "pele",
+    "diagram"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "happy-dom": "20.11.6",
+    "pele": "1.6.0"
+  }
+}

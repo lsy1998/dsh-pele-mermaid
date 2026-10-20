@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+.npm-cache/
+
+# build outputs (regenerate with `npm run build`)
+lib/client.js
+lib/pele-runtime.js
+
+# internal / scratch
+.recon/
+.verify/
+.plugin-core-tmp/
+.build-tmp/
+
+# packaging
+*.tgz
+
+# editors / OS
+.DS_Store
+*.log

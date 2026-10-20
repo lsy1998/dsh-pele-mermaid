@@ -255,8 +255,10 @@ npm run test:offline
 - `npm run build` 运行 `scripts/build.mjs`：esbuild 把 `src/client.js` 打包为 `lib/client.js`
   （ES2022、压缩、包裹在 `window.__ModuleLoader__.load(...)` 契约中），并把 Pele 全局脚本复制为
   `lib/pele-runtime.js`，同时记录 sha256。
-- `lib/client.js` 与 `lib/pele-runtime.js` 是**构建产物**，不纳入版本库。克隆后请先执行
-  `npm install && npm run build`。`lib/index.js` 是手写源码，缺失时构建会立即失败。
+- `lib/client.js` 与 `lib/pele-runtime.js` 由 `npm run build` 生成，但**有意提交到版本库**：
+  DSH profile 可以直接从 GitHub 源码安装本插件（`github:lsy1998/dsh-pele-mermaid`），该路径不会
+  执行构建，因此浏览器 bundle 与 Pele 运行时必须存在于仓库中。改动 `src/` 下的任何内容后，请
+  重新执行 `npm run build` 并提交结果。`lib/index.js` 是手写源码，缺失时构建会立即失败。
 - `npm run check` 对将要发布与构建的 JavaScript 执行 `node --check`（包括构建产物
   `lib/client.js` 与安装脚本），然后运行 `npm run test:offline`。
 - `npm test` 用 `node --test test/` 运行测试套件，基于 happy-dom，无需网络或浏览器；但 node 会为

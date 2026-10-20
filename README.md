@@ -275,9 +275,12 @@ npm run test:offline
 - `npm run build` runs `scripts/build.mjs`: esbuild bundles `src/client.js` to `lib/client.js`
   (ES2022, minified, wrapped in the `window.__ModuleLoader__.load(...)` contract) and copies the
   Pele global script to `lib/pele-runtime.js`, recording its sha256.
-- `lib/client.js` and `lib/pele-runtime.js` are **generated** and are not committed. Clone, then
-  `npm install && npm run build`. `lib/index.js` is hand-written source and the build fails fast
-  if it is missing.
+- `lib/client.js` and `lib/pele-runtime.js` are **generated** by `npm run build`, but they are
+  **committed on purpose**: a DSH profile can install this plugin straight from the GitHub source
+  (`github:lsy1998/dsh-pele-mermaid`), and that install path runs no build step, so the browser
+  bundle and the Pele runtime have to be in the repository. Re-run `npm run build` and commit the
+  result whenever you change anything under `src/`. `lib/index.js` is hand-written source and the
+  build fails fast if it is missing.
 - `npm run check` runs `node --check` on the JavaScript it ships and builds (including the built
   `lib/client.js` and the installer), then `npm run test:offline`.
 - `npm test` runs `node --test test/`. It uses happy-dom and needs no network or browser, but

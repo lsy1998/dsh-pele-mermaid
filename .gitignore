@@ -2,9 +2,11 @@
 node_modules/
 .npm-cache/
 
-# build outputs (regenerate with `npm run build`)
-lib/client.js
-lib/pele-runtime.js
+# NOTE: lib/client.js and lib/pele-runtime.js are BUILD OUTPUTS but are committed on
+# purpose. A DSH profile can install this plugin straight from the GitHub source
+# (`github:lsy1998/dsh-pele-mermaid`), and that install path has no build step, so
+# the browser bundle and the Pele runtime must be present in the repository.
+# Run `npm run build` before committing if you change anything under src/.
 
 # internal / scratch
 .recon/

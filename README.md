@@ -168,25 +168,13 @@ The block becomes a card that wraps the original `pre`. Diagram view is shown fi
 **Code** button reveals the untouched source, and **Diagram** switches back. Fullscreen and
 **Download SVG** are available whenever a diagram rendered successfully.
 
-## Coexistence with dsh-mermaid
-
-If the `dsh-mermaid` plugin is also installed, both plugins try to enhance the same code blocks.
-To stay safe, this plugin skips any `pre` that is already inside its own container
-(`[data-dsh-pele-mermaid]`) or inside a foreign diagram container (`.dsh-mmd`,
-`[data-dsh-mermaid]`), and marks each block it processes with `data-dsh-pele-mermaid-block`
-(the wrapper alone carries `data-dsh-pele-mermaid`). Which
-enhancer wins therefore depends on load order.
-
-Install only one of the two plugins for deterministic behaviour, or disable the other bundle in
-the profile's **Plugins** page.
-
 ## Behaviour and limits
 
 | Area | Behaviour |
 | --- | --- |
 | Detection | `pre > code` blocks whose class contains `language-mermaid`, `language-mermaidjs` or `language-mmd` (case-insensitive). Blocks with any other `language-*` class are never enhanced. |
 | Plain fallback | A code element with no `language-` class is treated as Mermaid only when Pele's `detectType()` returns a type **and** the first token is a known Mermaid keyword. |
-| Idempotence | A `pre` already inside `[data-dsh-pele-mermaid]` or a foreign diagram container is skipped; processed blocks are marked with `data-dsh-pele-mermaid-block`, while only the wrapper carries `data-dsh-pele-mermaid`. |
+| Idempotence | A `pre` already inside `[data-dsh-pele-mermaid]` is skipped; processed blocks are marked with `data-dsh-pele-mermaid-block`, while only the wrapper carries `data-dsh-pele-mermaid`. Re-enhancing the same block is a no-op. |
 | Toggle | Toolbar with a type badge and Code/Diagram buttons (`aria-pressed`). Diagram is the default view; the original `pre` is preserved. |
 | Rendering | Through `window.pele.mount(element, source, options)` so the layout adapts to the container width. Options: `maxWidth`, `autoDirection`, `padding`, `icons: () => null`, `links: true`, `linkRel: 'noopener'`. |
 | Theme | DSW tokens are mapped to Pele CSS variables on our container and re-applied when the dark theme or the document language changes. |
@@ -309,8 +297,6 @@ block npm lifecycle scripts may need `--ignore-scripts` (the esbuild binary ship
   localized message instead of a diagram.
 - **Nothing renders at all.** Confirm the `ui-pele-mermaid` bundle is enabled in the profile and
   that the app was restarted or the page refreshed after installation.
-- **Only one of two plugins acts on a block.** `dsh-mermaid` and `dsh-pele-mermaid` are both
-  installed; see [Coexistence with dsh-mermaid](#coexistence-with-dsh-mermaid).
 - **Colours or text geometry look stale after a theme change.** Colours are inherited and update
   without a re-render; font or geometry changes re-render the diagrams through Pele.
 - **The installer rejects a path.** On Windows it refuses `--profile` or `--source` values that

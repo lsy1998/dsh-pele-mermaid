@@ -15,12 +15,12 @@ via `dsh plugin --profile desktop add -w --save-exact <abs-path>`.
 ## 1. Verified environment facts (recon, do not re-derive)
 
 - DSH profile dir: the active `desktop` profile under `~/.dsh/profiles/desktop` (DSH_PROFILE=desktop, DSH_HOME=~/.dsh).
-- Node v22.18.0, npm 10.9.3, pnpm 11.21.0. Plugin engines: node >= 22.19 recommended (match dsh-mermaid).
+- Node v22.18.0, npm 10.9.3, pnpm 11.21.0. Plugin engines: node >= 22.18.0.
 - npm must run with the workspace `.npmrc` (cache=.npm-cache) and `--ignore-scripts` (sandbox blocks
   npm lifecycle child processes). Never write outside the workspace without lead approval.
 - Reference implementation installed at
-  `<desktop-profile>/node_modules/dsh-mermaid` (v0.4.1) — read it for DOM/toolbar
-  conventions, but write ORIGINAL code. Our CSS prefix is `dsh-pm-` (not `dsh-mmd-`).
+  An installed reference plugin of the same shape may be read for DOM/toolbar conventions, but
+  write ORIGINAL code. Our CSS prefix is `dsh-pm-`.
 - DSH ships the authoritative skill `cordis-plugin-development` inside app.asar
   (`...app.asar\dsh\node_modules\@deepseek-ai\dsh-agent-preset\skills\cordis-plugin-development`);
   only node fs reads can open app.asar (rg/glob/shell cannot).
@@ -60,7 +60,7 @@ via `dsh plugin --profile desktop add -w --save-exact <abs-path>`.
       name: 'dsh-pele-mermaid'
 ```
 
-Host face `lib/index.js` (Cordis, node half) — mirrors dsh-mermaid exactly:
+Host face `lib/index.js` (Cordis, node half) — the standard DSH host-face shape:
 ```js
 export const inject = ['webServer'];
 export const RUNTIME_PATH = '/dsh-pele-mermaid/pele-runtime.js';
@@ -152,7 +152,7 @@ R1 **Detection** — enhance only `pre > code` blocks whose class contains
    token is a known mermaid keyword. Never enhance a block with another `language-*` class. Never touch
    inline `code`.
 R2 **Idempotence / coexistence** — skip any `pre` that is already inside our container
-   (`[data-dsh-pele-mermaid]`) or inside a foreign diagram container (`.dsh-mmd`, `[data-dsh-mermaid]`).
+   (`[data-dsh-pele-mermaid]`) or inside a foreign diagram container.
    Mark processed blocks with `data-dsh-pele-mermaid-block` on the `pre` (the container alone carries
    `data-dsh-pele-mermaid`, so a `[data-dsh-pele-mermaid]` count equals the number of blocks exactly once).
 R3 **Toggle** — toolbar with a badge (diagram type + "Pele") and Code/Diagram buttons
@@ -208,7 +208,7 @@ Children: `.dsh-pm-bar` (toolbar), `.dsh-pm-badge`, `.dsh-pm-btn`, `.dsh-pm-acti
 `.dsh-pm-body`, `.dsh-pm-pane` (`data-state="loading|ready|error"`), `.dsh-pm-code`,
 `.dsh-pm-error`, `.dsh-pm-status` (`aria-live="polite"`), viewer: `.dsh-pm-viewer`,
 `.dsh-pm-viewer-bar`, `.dsh-pm-viewer-title`, `.dsh-pm-viewport`, `.dsh-pm-stage`, `.dsh-pm-sr-only`.
-Use DSW tokens for our own chrome (same family as dsh-mermaid: `--dsw-alias-*`, `--ds-font-family-code`,
+Use DSW tokens for our own chrome (`--dsw-alias-*`, `--ds-font-family-code`,
 `--dsw-radius-*`) with literal fallbacks. Respect `prefers-reduced-motion`.
 
 ## 8. Build / test / check (single source of truth)

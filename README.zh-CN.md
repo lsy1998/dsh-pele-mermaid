@@ -153,22 +153,13 @@ flowchart LR
 该代码块会变成一个包裹原始 `pre` 的卡片。默认显示图表视图；点击 **代码** 显示未改动的源码，
 点击 **图表** 切回。渲染成功时，全屏与 **下载 SVG** 始终可用。
 
-## 与 dsh-mermaid 共存
-
-如果同时安装了 `dsh-mermaid`，两个插件都会尝试处理相同的代码块。为安全起见，本插件会跳过
-已经位于自身容器（`[data-dsh-pele-mermaid]`）或外部图表容器（`.dsh-mmd`、`[data-dsh-mermaid]`）
-内的 `pre`，并把处理过的块标记为 `data-dsh-pele-mermaid-block`（仅外层容器带
-`data-dsh-pele-mermaid`）。因此谁先执行谁生效。
-
-要获得确定的行为，请只安装两者之一，或在 profile 的 **Plugins** 页面禁用另一个 bundle。
-
 ## 行为与限制
 
 | 方面 | 行为 |
 | --- | --- |
 | 识别 | class 含 `language-mermaid`、`language-mermaidjs` 或 `language-mmd`（不区分大小写）的 `pre > code` 块。带其他 `language-*` 类的块绝不处理。 |
 | 纯文本回退 | 没有 `language-` 类的 code 元素，仅当 Pele 的 `detectType()` 返回类型 **且** 首词是已知 Mermaid 关键字时才按 Mermaid 处理。 |
-| 幂等 | 已在 `[data-dsh-pele-mermaid]` 或外部图表容器内的 `pre` 会被跳过；处理过的块标记 `data-dsh-pele-mermaid-block`，仅外层容器带 `data-dsh-pele-mermaid`。 |
+| 幂等 | 已在 `[data-dsh-pele-mermaid]` 内的 `pre` 会被跳过；处理过的块标记 `data-dsh-pele-mermaid-block`，仅外层容器带 `data-dsh-pele-mermaid`。重复处理同一块不会产生副作用。 |
 | 切换 | 工具栏含类型徽标与代码/图表按钮（`aria-pressed`）。默认图表视图，保留原始 `pre`。 |
 | 渲染 | 通过 `window.pele.mount(element, source, options)`，使布局随容器宽度自适应。选项：`maxWidth`、`autoDirection`、`padding`、`icons: () => null`、`links: true`、`linkRel: 'noopener'`。 |
 | 主题 | 在插件容器上把 DSW 令牌映射为 Pele CSS 变量；暗色主题或文档语言变化时重新应用。 |
@@ -283,8 +274,6 @@ npm run test:offline
 - **代码块保持为源码。** 检查是否超过 50,000 字符或 2,000 行，或语法不符合 Mermaid 12.1.0；
   这两种情况都会刻意保留源码并显示本地化提示，而不是渲染图表。
 - **完全不渲染。** 确认 profile 中已启用 `ui-pele-mermaid` bundle，并在安装后重启应用或刷新页面。
-- **两个插件只有一个生效。** `dsh-mermaid` 与 `dsh-pele-mermaid` 同时安装，参见
-  [与 dsh-mermaid 共存](#与-dsh-mermaid-共存)。
 - **切换主题后颜色或文字几何看起来陈旧。** 颜色靠继承、无需重新渲染即可更新；字体或几何变化会
   通过 Pele 重绘图表。
 - **安装脚本拒绝某个路径。** 在 Windows 上，`--profile` 或 `--source` 值包含 `& | < > ^ % ! ( )`

@@ -14,14 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per block and resets when the diagram re-renders.
 - The inline pane is a focusable viewport (`tabindex="0"`, `role="group"`, localized label) that
   announces its current zoom through a polite live region.
+- Zoom in / Zoom out / Reset zoom buttons on the inline diagram toolbar.
 
-### Changed
+### Fixed
 
-- The fullscreen viewer opens at the inline pane's current zoom, and closing it restores the
-  inline scroll offsets and zoom before focus returns to the trigger, so the round trip is
-  lossless.
-- The zoom and pan maths live in one shared module (`src/zoom.js`) used by both the inline pane
-  and the fullscreen overlay.
+- **Export cropped the diagram.** `Download SVG` exported the on-screen `<svg>`, which carried the
+  inline zoom styles, so the file showed only the visible part and had no natural size. The export
+  now uses the pristine render result at its natural size and is identical whether or not the
+  diagram was zoomed or panned.
+- **The inline diagram was clipped and dragging misbehaved after zooming.** The anchored zoom could
+  ask for a negative scroll offset, which a browser clamps to 0, and the pan mixed a scroll offset
+  with a transform, so a diagram wider than the pane but shorter than the pane was scrolled
+  horizontally and translated vertically. The pane now uses one pan model with clamped scroll
+  offsets, and the stylesheet no longer fights the zoomed size.
+- **Leaving the fullscreen viewer was not obvious.** The close control was a bare glyph among four
+  other glyph buttons. The overlay now has a labelled "Exit fullscreen" button, closes on a
+  backdrop click, and still closes on `Escape`.
 
 ## [0.1.0] - 2026-10-19
 

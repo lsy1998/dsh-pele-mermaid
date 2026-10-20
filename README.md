@@ -35,15 +35,17 @@ rendered.
   original `pre` element is preserved for code view.
 - Toolbar badge that names the detected diagram type next to "Pele", plus fullscreen and
   **Download SVG** actions.
-- Zoom and pan in place: hold `Ctrl` (or `Cmd`) and scroll the wheel to zoom at the pointer,
-  drag to pan, and use `+`, `-`, `0` and the arrow keys. A plain wheel still scrolls the page.
-  The state is per block and resets when the diagram re-renders.
+- Zoom and pan in place: the **Zoom in / Zoom out / Reset zoom** buttons in the toolbar, hold
+  `Ctrl` (or `Cmd`) and scroll the wheel to zoom at the pointer, drag to pan, and use `+`,
+  `-`, `0` and the arrow keys. A plain wheel still scrolls the page. The state is per block and
+  resets when the diagram re-renders.
 - Fullscreen viewer: zoom in / out / reset / fit, drag to pan, `Ctrl` or `Cmd` + wheel to zoom at
   the pointer, `Escape` to close, focus trapped while open and returned to the trigger on close,
   `role="dialog"` and `aria-modal="true"`. It opens at the inline zoom and restores the inline
   scroll position and zoom when you close it.
 - Exports a standalone `.svg` file named `pele-<type>-YYYYMMDD-HHmmss.svg` whose root carries the
-  resolved theme variables, so it looks the same outside DSH.
+  resolved theme variables, so it looks the same outside DSH. The export is always the **whole
+  diagram at its natural size** — zooming or panning first does not crop it.
 - Adapts to the DSW light and dark themes by mapping DSW design tokens onto Pele CSS variables.
   Colour changes need no re-render; geometry-only changes re-render the affected diagrams.
 - Falls back to the diagram source with a localized error message — including Pele's line and

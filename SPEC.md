@@ -180,7 +180,9 @@ R9 **Zoom, pan and the viewer** — the INLINE diagram pane supports Ctrl/Meta +
    lossless: the overlay opens at the inline pane's effective zoom, and closing it restores the
    inline scroll offsets and zoom before focus returns to the trigger.
 R10 **Export** — download a standalone `.svg` (`svgFileName`) whose root carries the resolved theme
-   variables so it looks the same outside DSH.
+   variables so it looks the same outside DSH. The export uses the PRISTINE render result at its
+   natural size, never the on-screen (zoomed / panned / cropped) element, and is identical whether
+   or not the user zoomed or panned.
 R11 **i18n** — every user-visible string comes from `MESSAGES` via `t()`; `en` + `zh-CN`;
    language from `document.documentElement.lang` / `navigator.language`; live switch on `lang` change.
 R12 **Disposal** — `apply` registers every observer/listener inside `ctx.effect(...)` and returns a
@@ -214,7 +216,8 @@ Children: `.dsh-pm-bar` (toolbar), `.dsh-pm-badge`, `.dsh-pm-btn`, `.dsh-pm-acti
 `.dsh-pm-body`, `.dsh-pm-pane` (`data-state="loading|ready|error"`), `.dsh-pm-code`,
 `.dsh-pm-error`, `.dsh-pm-status` (`aria-live="polite"`), the inline pane as a focusable
    viewport (`tabindex="0"`, `role="group"`, `data-zoom`/`data-pan-x`/`data-pan-y`) with a
-   `.dsh-pm-sr-only` zoom live region, viewer: `.dsh-pm-viewer`,
+   `.dsh-pm-sr-only` zoom live region, the inline zoom buttons (`.dsh-pm-zoom`), viewer:
+   `.dsh-pm-viewer`, `.dsh-pm-viewer-backdrop`, `.dsh-pm-viewer-exit-label`,
 `.dsh-pm-viewer-bar`, `.dsh-pm-viewer-title`, `.dsh-pm-viewport`, `.dsh-pm-stage`, `.dsh-pm-sr-only`.
 Use DSW tokens for our own chrome (`--dsw-alias-*`, `--ds-font-family-code`,
 `--dsw-radius-*`) with literal fallbacks. Respect `prefers-reduced-motion`.

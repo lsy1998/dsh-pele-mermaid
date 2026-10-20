@@ -38,6 +38,13 @@ export const CSS = `
 .dsh-pm-pane[data-dragging='true']{cursor:grabbing}
 .dsh-pm-pane:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:-2px}
 .dsh-pm-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
+/* Zoomed: the pane is a plain scroll container. The auto centring margin and
+   the max-width clamp would offset/scale the rendered box away from where the zoom
+   maths puts it (the transform origin is 0 0), so both are switched off as soon as
+   the user zooms. The JS also sets an explicit inline size, which would win anyway. */
+.dsh-pm-pane[data-zoom]:not([data-zoom='100']) svg{margin:0;max-width:none;height:auto}
+/* A zoomed diagram is scrollable rather than stretching the page. */
+.dsh-pm-pane[data-zoom]:not([data-zoom='100']){overscroll-behavior:contain}
 .dsh-pm-pane[data-state='loading']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:12px 14px;white-space:pre-wrap}
 .dsh-pm-pane[data-state='error']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:12px 14px;white-space:pre-wrap}
 .dsh-pm-code{display:none;margin:0;padding:12px 14px;overflow-x:auto;font:var(--dsw-font-markdown-code-block,13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);color:var(--dsw-alias-label-primary,#e6e6e6);white-space:pre;tab-size:4}
@@ -52,7 +59,21 @@ export const CSS = `
 .dsh-pm-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-pm-viewer[hidden]{display:none}
-.dsh-pm-viewer-bar{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.98))}
+/* The bar wraps instead of pushing the close control off-screen: with a 12px font,
+   5 glyph buttons + a title + gap need ~470px, and a 700-900px window still has to
+   leave room for the label + padding. flex-wrap + min-width:0 on the title keeps the
+   actions on the first line whenever there is space and never hides them. */
+.dsh-pm-viewer-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.98))}
+.dsh-pm-viewer-bar .dsh-pm-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.dsh-pm-viewer-bar .dsh-pm-actions .dsh-pm-btn{flex:0 0 auto}
+/* A text label is unmistakable next to four bare glyph buttons; it only needs the
+   room when the bar is narrow, so it is hidden from the layout (not from AT) below
+   640px, where the ✕ glyph plus the aria-label/title carry the meaning. */
+.dsh-pm-viewer-exit-label{white-space:nowrap}
+@media (max-width:639px){.dsh-pm-viewer-exit-label{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}}
+/* The backdrop is the part of the overlay that is NOT the diagram viewport, so a
+   click anywhere around the diagram closes the viewer. */
+.dsh-pm-viewer-backdrop{position:fixed;inset:0;z-index:2147482999;background:transparent;border:0;padding:0;cursor:default}
 body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
 .dsh-pm-viewer-title{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#555);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.35))}

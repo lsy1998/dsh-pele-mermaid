@@ -61,6 +61,7 @@ export function createViewer(deps) {
   var zoom = createZoomState();
   var trigger = null;
   var bar = null;
+  var backdrop = null;
   var drag = null;
   var currentType = 'diagram';
   var closeHandler = null;
@@ -96,6 +97,24 @@ export function createViewer(deps) {
     node.setAttribute('title', t(key));
     node.textContent = glyph;
     node.onclick = handler;
+    return node;
+  }
+
+  /**
+   * A TEXT button: the glyph plus a visible, localized label.
+   *
+   * The overlay used to offer a single ✕ glyph. It worked and was on top of everything,
+   * but it was indistinguishable from the four other glyph buttons (zoom out/in/fit/reset)
+   * and it carried no visible text, so users did not find it. The label makes the exit
+   * affordance unmistakable; below 640px the stylesheet hides the label visually (the aria-label
+   * and title still carry it) so the bar does not wrap.
+   */
+  function textButton(key, glyph, handler, labelKey) {
+    var node = button(key, glyph, handler);
+    var label = el('span', 'dsh-pm-viewer-exit-label');
+    label.setAttribute('data-i18n-key', key);
+    label.textContent = t(labelKey || key);
+    node.appendChild(label);
     return node;
   }
 
@@ -153,7 +172,8 @@ export function createViewer(deps) {
     actions.appendChild(button('zoomIn', '+', function () { zoomBy(ZOOM_STEP); }));
     actions.appendChild(button('fitWindow', '⤡', function () { fitToWindow(); }));
     actions.appendChild(button('resetZoom', '1:1', function () { resetToNatural(); }));
-    actions.appendChild(button('closeViewer', '✕', function () { closeViewer(); }));
+    // The exit control is a TEXT button, not a bare glyph: it must be findable.
+    actions.appendChild(textButton('closeViewer', '✕', function () { closeViewer(); }, 'exitFullscreen'));
     bar.appendChild(actions);
     root.appendChild(bar);
 
@@ -169,6 +189,14 @@ export function createViewer(deps) {
     liveEl.setAttribute('aria-live', 'polite');
     liveEl.setAttribute('aria-label', t('statusLabel'));
     root.appendChild(liveEl);
+
+    // A click on the area around the diagram closes the overlay. It is appended LAST, so it
+    // sits behind the bar and the viewport in the paint order: a click on either of those is
+    // swallowed by their own listener and never reaches the backdrop.
+    backdrop = el('div', 'dsh-pm-viewer-backdrop');
+    backdrop.setAttribute('aria-hidden', 'true');
+    backdrop.onclick = function () { closeViewer(); };
+    root.appendChild(backdrop);
 
     attachOverlay();
     built = true;
@@ -364,6 +392,11 @@ export function createViewer(deps) {
     else if (key === 'ArrowDown') panBy(0, step);
   }
 
+  /** A click inside the chrome must not fall through to the backdrop. */
+  function swallow(event) {
+    if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+  }
+
   function bindInteractions() {
     removeListeners();
     var usePointer = !!(win && typeof win.PointerEvent === 'function');
@@ -373,6 +406,10 @@ export function createViewer(deps) {
     listen(viewport, 'wheel', onWheel, { passive: false });
     listen(doc, 'keydown', onKeydown);
     listen(win, 'resize', onResize);
+    // The bar and the viewport sit above the backdrop, so their clicks must not bubble to it:
+    // clicking a zoom button, or dragging the diagram, must not close the overlay.
+    listen(bar, 'click', swallow);
+    listen(viewport, 'click', swallow);
   }
 
   function openViewer(settings) {
@@ -448,6 +485,8 @@ export function createViewer(deps) {
     stage = null;
     svgEl = null;
     liveEl = null;
+    backdrop = null;
+    bar = null;
     built = false;
   }
 

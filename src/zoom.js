@@ -252,8 +252,9 @@ export function applyTransform(target, zoom, options) {
   if (opts.mode === 'size') {
     // The scale becomes the element's layout size, so the scroll container grows
     // with the content and can scroll to it. The translation is realised by the
-    // scroll container's scroll offsets, not by a transform (which would not
-    // enlarge the scrollable area).
+    // scroll container's scroll offsets (clamped - see writeScroll), NOT by a
+    // transform: a transform never enlarges the scrollable area, and combining the
+    // two is what made the pane clip and the pan misbehave.
     const natural = opts.natural || {};
     const width = positive(natural.width);
     const height = positive(natural.height);
@@ -261,10 +262,64 @@ export function applyTransform(target, zoom, options) {
     if (height > 0) target.style.height = round(height * scale, 2) + 'px';
     if (typeof target.style.setProperty === 'function') target.style.setProperty('max-width', 'none');
     else target.style.maxWidth = 'none';
+    // Size mode never translates the content: the scroll offsets are the pan. A leftover
+    // translate is cleared only when the target actually has one, so a caller that owns
+    // the transform property is never handed a spurious empty string.
+    if ('transform' in target.style && target.style.transform) target.style.transform = '';
+    if ('transformOrigin' in target.style && target.style.transformOrigin) target.style.transformOrigin = '';
     return;
   }
   target.style.transform = 'translate(' + round(tx) + 'px, ' + round(ty) + 'px) scale(' + round(scale, 4) + ')';
   target.style.transformOrigin = '0 0';
+}
+/**
+ * Clamp a scroll offset into the range the container can actually scroll to.
+ *
+ * A browser silently clamps `scrollLeft`/`scrollTop` to
+ * `[0, scrollSize - clientSize]`, so an out-of-range write is silently lost and the maths
+ * that derived it (zoom anchoring, drag panning) then disagrees with what is on screen.
+ * Computing the clamp once here and using it for EVERY scroll write keeps the two in sync,
+ * and makes the resulting offset readable in a DOM without a layout engine.
+ *
+ * When the element has NO layout at all (both extents are 0 - happy-dom, a detached node, a
+ * hidden container) the maximum is unknowable, so only the lower bound is applied: a negative
+ * offset is always wrong, a positive one is merely unverifiable here.
+ *
+ * `value`      - the desired offset (may be negative or beyond the maximum).
+ * `scrollSize` - the scrollable extent on the axis (scrollWidth / scrollHeight).
+ * `clientSize` - the visible extent on the axis (clientWidth / clientHeight).
+ */
+export function clampScroll(value, scrollSize, clientSize) {
+  const wanted = Number.isFinite(value) ? value : 0;
+  const extent = (Number.isFinite(scrollSize) ? scrollSize : 0);
+  const visible = (Number.isFinite(clientSize) ? clientSize : 0);
+  if (extent <= 0 && visible <= 0) return Math.max(0, wanted);
+  return clamp(wanted, 0, Math.max(0, extent - visible));
+}
+
+/** Read a scroll offset from an element, falling back to 0 when it is not exposed. */
+export function readScroll(element, axis) {
+  if (!element) return 0;
+  const value = axis === 'top' ? element.scrollTop : element.scrollLeft;
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Write a scroll offset on an element, clamped to the range the element can scroll to
+ * (see clampScroll). Returns the value that was actually written.
+ */
+export function writeScroll(element, axis, value) {
+  if (!element) return 0;
+  const top = axis === 'top';
+  const scrollSize = top ? element.scrollHeight : element.scrollWidth;
+  const clientSize = top ? element.clientHeight : element.clientWidth;
+  const next = clampScroll(value, scrollSize, clientSize);
+  if (top) element.scrollTop = next;
+  else element.scrollLeft = next;
+  // Read back what the element reports, so callers see the value a browser would store
+  // (it clamps too). When the element does not expose the property, keep our own value.
+  const stored = readScroll(element, axis);
+  return stored === 0 && next !== 0 ? next : stored;
 }
 /**
  * Zoom a scrollable content around the pointer and return the new scroll offsets.

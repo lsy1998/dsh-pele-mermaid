@@ -445,13 +445,35 @@ function enhanceInfo(info) {
 
 /* ------------------------------------------------------------------ *
  * Inline pane zoom/pan (SPEC R9 parity, keyboard accessible)
- * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ *
+ *
+ * ONE pan model: the pane is a plain scroll container (overflow:auto) and the SVG gets an
+ * explicit layout size (natural * effective scale), so every pan - pointer drag, wheel zoom
+ * anchoring, arrow keys - is expressed as a scroll offset that goes through writeScroll().
+ * zoom.tx/ty stay 0 on purpose: mixing a translate with a scroll is what used to clip the
+ * diagram and make the drag fight the zoom maths.
+ */
 
 /**
  * The natural (intrinsic) size of the diagram inside the pane.
  * This is the size the SVG declares, not the size it is displayed at.
+ *
+ * Pele's RenderResult (remembered in entry.pristine) is authoritative: once the pane is
+ * zoomed the on-screen width attribute is the DISPLAYED size, so re-measuring the element
+ * would feed the zoomed width back into the maths and compound it. The element attributes
+ * and the viewBox are only consulted before the first render result arrives.
  */
 function inlineNatural(entry) {
+  const pristine = entry.pristine;
+  if (pristine && pristine.svg) {
+    // The natural size comes from the markup's OWN width/height attributes first (they are
+    // the size Pele actually drew), and from the reported result only as a fallback - a
+    // runtime may report a different number than it emitted.
+    const declared = declaredSize(pristine.svg);
+    const width = declared.width > 0 ? declared.width : pristine.width;
+    const height = declared.height > 0 ? declared.height : pristine.height;
+    if (width > 0 && height > 0) return { width, height };
+  }
   const svg = entry.pane && entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
   if (!svg) return entry.zoomNatural;
   const size = measureSvg(svg);
@@ -466,7 +488,7 @@ function inlineNatural(entry) {
  * did before.
  */
 function inlineFitScale(entry) {
-  const natural = entry.zoomNatural || { width: 0, height: 0 };
+  const natural = inlineNatural(entry);
   const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
   if (clientWidth > 0 && natural.width > 0) return Math.min(1, clientWidth / natural.width);
   return entry.zoomFit > 0 ? entry.zoomFit : 1;
@@ -479,11 +501,10 @@ function inlineScale(entry) {
 
 /**
  * The layout of the diagram inside the scroll container for a given effective
- * scale: the displayed size and the centring offset the stylesheet applies
- * when the content is narrower than the pane.
+ * scale: the displayed size and the scrollable extent.
  */
 function inlineLayout(entry, effectiveScale) {
-  const natural = entry.zoomNatural || { width: 0, height: 0 };
+  const natural = inlineNatural(entry);
   const width = natural.width * effectiveScale;
   const height = natural.height * effectiveScale;
   const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
@@ -492,15 +513,15 @@ function inlineLayout(entry, effectiveScale) {
     natural,
     width,
     height,
-    marginX: clientWidth > 0 && clientWidth > width ? (clientWidth - width) / 2 : 0,
-    marginY: clientHeight > 0 && clientHeight > height ? (clientHeight - height) / 2 : 0,
+    scrollWidth: Math.max(width, clientWidth),
+    scrollHeight: Math.max(height, clientHeight),
   };
 }
 
 /**
  * Write the current zoom state onto the rendered SVG and the accessibility tree.
  * The effective scale becomes the SVG's layout size (so the pane can scroll to
- * the enlarged content) and the pan offset is a transform on top of it.
+ * the enlarged content); the pan itself is a scroll offset, never a transform.
  */
 function applyInlineZoom(entry) {
   if (!entry || !entry.pane) return;
@@ -518,6 +539,7 @@ function applyInlineZoom(entry) {
     svg.style.maxWidth = '';
     svg.style.minWidth = '';
     svg.style.transform = '';
+    svg.style.transformOrigin = '';
     // The pane only gets a bounded height once the diagram is enlarged, so an
     // unzoomed block still grows with its diagram as it always did.
     entry.pane.style.maxHeight = '';
@@ -526,16 +548,24 @@ function applyInlineZoom(entry) {
     svg.style.height = round(natural.height * effective, 2) + 'px';
     svg.style.maxWidth = 'none';
     svg.style.minWidth = '0';
-    svg.style.transform = 'translate(' + round(zoom.tx) + 'px, ' + round(zoom.ty) + 'px)';
-    svg.style.transformOrigin = '0 0';
+    // The pan is normally a scroll offset. When the pane cannot scroll (not laid out yet, or
+    // the diagram is smaller than the pane) the drag falls back to a translate, which is
+    // applied here and dropped by the next scroll-capable gesture.
+    if (zoom.tx || zoom.ty) {
+      svg.style.transform = 'translate(' + round(zoom.tx) + 'px, ' + round(zoom.ty) + 'px)';
+      svg.style.transformOrigin = '0 0';
+    } else {
+      svg.style.transform = '';
+      svg.style.transformOrigin = '';
+    }
     // A bounded pane makes the enlarged diagram scrollable instead of pushing
     // the rest of the message out of the view.
     if (!entry.pane.style.maxHeight) entry.pane.style.maxHeight = '70vh';
   }
   if (entry.pane.dataset) {
     entry.pane.dataset.zoom = String(Math.round(zoom.scale * 100));
-    entry.pane.dataset.panX = String(Math.round(zoom.tx));
-    entry.pane.dataset.panY = String(Math.round(zoom.ty));
+    entry.pane.dataset.panX = String(Math.round(readScroll(entry.pane, 'left')));
+    entry.pane.dataset.panY = String(Math.round(readScroll(entry.pane, 'top')));
   }
   updateZoomStatus(entry);
 }
@@ -551,6 +581,10 @@ function updateZoomStatus(entry) {
 /**
  * Zoom the inline diagram around the pane point (px, py): the content point
  * under the pointer stays under the pointer.
+ *
+ * The scale becomes the SVG layout size, so the anchored point is held by moving the
+ * pane's scroll offsets - clamped, so a pointer near the origin can never ask for a
+ * negative scroll (a browser would silently clamp that to 0 and the anchor would break).
  */
 function zoomInlineAt(entry, factor, px, py) {
   if (!entry || !entry.zoom) return false;
@@ -559,29 +593,48 @@ function zoomInlineAt(entry, factor, px, py) {
   const next = clamp(previous * factor, MIN_SCALE, MAX_SCALE);
   if (next === previous) return false;
   const fit = inlineFitScale(entry);
-  const before = inlineLayout(entry, previous * fit);
-  const after = inlineLayout(entry, next * fit);
   const x = Number.isFinite(px) ? px : 0;
   const y = Number.isFinite(py) ? py : 0;
-  const scrollLeft = entry.pane.scrollLeft || 0;
-  const scrollTop = entry.pane.scrollTop || 0;
+  // The anchored content point is held by the scroll offsets, so any translate left over
+  // from an unscrollable drag is retired here: keeping both would double-count the pan.
+  const offsetX = zoom.tx;
+  const offsetY = zoom.ty;
+  zoom.tx = 0;
+  zoom.ty = 0;
+  const scrollLeft = readScroll(entry.pane, 'left') - offsetX;
+  const scrollTop = readScroll(entry.pane, 'top') - offsetY;
   // The natural (unscaled) content coordinate under the pointer.
-  const contentX = (x - before.marginX - zoom.tx + scrollLeft) / (previous * fit);
-  const contentY = (y - before.marginY - zoom.ty + scrollTop) / (previous * fit);
+  const contentX = (x + scrollLeft) / (previous * fit);
+  const contentY = (y + scrollTop) / (previous * fit);
   zoom.setScale(next);
   applyInlineZoom(entry);
-  // Move the scroll offsets so the anchored point stays under the pointer.
-  entry.pane.scrollLeft = contentX * next * fit + after.marginX + zoom.tx - x;
-  entry.pane.scrollTop = contentY * next * fit + after.marginY + zoom.ty - y;
+  // Move the scroll offsets so the anchored point stays under the pointer. They are clamped,
+  // so a pointer near the origin can never ask for a negative scroll (a browser would clamp
+  // that to 0 and the anchor would silently break).
+  writeScroll(entry.pane, 'left', contentX * next * fit - x);
+  writeScroll(entry.pane, 'top', contentY * next * fit - y);
+  if (entry.pane.dataset) {
+    entry.pane.dataset.panX = String(Math.round(readScroll(entry.pane, 'left')));
+    entry.pane.dataset.panY = String(Math.round(readScroll(entry.pane, 'top')));
+  }
   return true;
 }
 
-/** Pan the inline diagram by (dx, dy) pointer pixels. */
+/** Pan the inline diagram by (dx, dy) pointer pixels, as a scroll. */
 function panInline(entry, dx, dy) {
-  if (!entry || !entry.zoom) return;
-  const zoom = entry.zoom;
-  zoom.panBy(dx, dy);
-  applyInlineZoom(entry);
+  if (!entry || !entry.zoom || !entry.pane) return;
+  // Retire a translate left over from an unscrollable drag, so the two never compound.
+  if (entry.zoom.tx || entry.zoom.ty) {
+    entry.zoom.tx = 0;
+    entry.zoom.ty = 0;
+    applyInlineZoom(entry);
+  }
+  writeScroll(entry.pane, 'left', readScroll(entry.pane, 'left') - dx);
+  writeScroll(entry.pane, 'top', readScroll(entry.pane, 'top') - dy);
+  if (entry.pane.dataset) {
+    entry.pane.dataset.panX = String(Math.round(readScroll(entry.pane, 'left')));
+    entry.pane.dataset.panY = String(Math.round(readScroll(entry.pane, 'top')));
+  }
 }
 
 /** Reset the inline zoom/pan to the natural size. */
@@ -589,8 +642,8 @@ function resetInlineZoom(entry) {
   if (!entry || !entry.zoom) return;
   entry.zoom.reset();
   if (entry.pane) {
-    entry.pane.scrollLeft = 0;
-    entry.pane.scrollTop = 0;
+    writeScroll(entry.pane, 'left', 0);
+    writeScroll(entry.pane, 'top', 0);
   }
   applyInlineZoom(entry);
 }
@@ -622,10 +675,11 @@ function onPanePointerDown(entry, event) {
   entry.drag = {
     x: Number(event.clientX) || 0,
     y: Number(event.clientY) || 0,
+    scrollLeft: readScroll(entry.pane, 'left'),
+    scrollTop: readScroll(entry.pane, 'top'),
+    // Kept for the unscrollable fallback (see onPanePointerMove).
     tx: entry.zoom.tx,
     ty: entry.zoom.ty,
-    scrollLeft: entry.pane.scrollLeft || 0,
-    scrollTop: entry.pane.scrollTop || 0,
   };
   if (entry.pane.setAttribute) entry.pane.setAttribute('data-dragging', 'true');
   // Capture the pointer so the browser keeps delivering move and release events
@@ -644,22 +698,30 @@ function onPanePointerMove(entry, event) {
   if (!drag || !event) return;
   const dx = (Number(event.clientX) || 0) - drag.x;
   const dy = (Number(event.clientY) || 0) - drag.y;
-  const zoom = entry.zoom;
-  const fit = inlineFitScale(entry);
-  const layout = inlineLayout(entry, zoom.scale * fit);
   const pane = entry.pane;
-  const clientWidth = pane.clientWidth || 0;
-  const clientHeight = pane.clientHeight || 0;
-  // The pane size is unknown (a detached or unlaid-out pane): fall back to a
-  // translation, which always moves the diagram.
-  const measured = clientWidth > 0 && clientHeight > 0;
-  // When the diagram is larger than the pane the pan is a scroll, otherwise it
-  // is a translation of the content inside the pane.
-  if (measured && layout.width > clientWidth) pane.scrollLeft = drag.scrollLeft - dx;
-  else zoom.tx = drag.tx + dx;
-  if (measured && layout.height > clientHeight) pane.scrollTop = drag.scrollTop - dy;
-  else zoom.ty = drag.ty + dy;
-  applyInlineZoom(entry);
+  // ONE model: the pan is a scroll. Dragging right moves the content right (the scroll
+  // offset decreases), so the diagram follows the pointer and never leaves a gap at the
+  // origin. When the pane cannot scroll at all - not laid out yet, or the diagram is
+  // smaller than the pane - there is nothing to scroll, and a scroll-only drag would be a
+  // silent no-op. In that case the drag becomes a translate, so the gesture ALWAYS moves
+  // the diagram; the translate is dropped as soon as the pane can scroll again.
+  const scrollable = pane && (pane.scrollWidth > (pane.clientWidth || 0) || pane.scrollHeight > (pane.clientHeight || 0));
+  if (scrollable) {
+    writeScroll(pane, 'left', drag.scrollLeft - dx);
+    writeScroll(pane, 'top', drag.scrollTop - dy);
+    if (entry.zoom.tx || entry.zoom.ty) {
+      entry.zoom.tx = 0;
+      entry.zoom.ty = 0;
+    }
+  } else {
+    entry.zoom.tx = drag.tx + dx;
+    entry.zoom.ty = drag.ty + dy;
+    applyInlineZoom(entry);
+  }
+  if (pane && pane.dataset) {
+    pane.dataset.panX = String(Math.round(scrollable ? readScroll(pane, 'left') : entry.zoom.tx));
+    pane.dataset.panY = String(Math.round(scrollable ? readScroll(pane, 'top') : entry.zoom.ty));
+  }
   if (typeof event.preventDefault === 'function') event.preventDefault();
 }
 

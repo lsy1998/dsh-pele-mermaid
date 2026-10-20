@@ -182,6 +182,15 @@ async function main() {
     );
   }
   if (!existsSync(PELE_GLOBAL)) {
+    // A GitHub-source install has no node_modules: the committed artifacts are
+    // already the shipped ones, so keep them instead of failing the install.
+    if (existsSync(OUT_CLIENT) && existsSync(OUT_RUNTIME)) {
+      console.log('dsh-pele-mermaid build');
+      console.log('  skipped: node_modules/pele is absent, keeping the committed artifacts');
+      console.log(`  lib/client.js       ${(await readFile(OUT_CLIENT)).length} bytes`);
+      console.log(`  lib/pele-runtime.js ${(await readFile(OUT_RUNTIME)).length} bytes`);
+      return;
+    }
     throw new Error(`Pele runtime not found: ${PELE_GLOBAL} (run npm install --ignore-scripts)`);
   }
 

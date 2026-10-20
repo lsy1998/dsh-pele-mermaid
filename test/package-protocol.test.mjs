@@ -2,13 +2,16 @@
 // amendment), §9.4 packaging list, and the cordis patch. Read-only checks of other owners' files.
 
 import test from 'node:test';
+import { existsSync, readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+
 
 import { workspacePath, readIfExists } from './harness.mjs';
 
 const pkgPath = workspacePath('package.json');
+function readIfExistsSync(path) { return existsSync(path) ? readFileSync(path, 'utf8') : null; }
+
 const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
 
 test('package.json declares the frozen wire protocol (SPEC §2)', () => {
@@ -61,6 +64,34 @@ test('package.json files[] ships the DoD artifact list (SPEC §9.4)', () => {
   if (pkg.bin) {
     assert.equal(pkg.bin['dsh-pele-mermaid'], 'bin/dsh-pele-mermaid.mjs', 'bin mapping should match dsh-mermaid');
   }
+});
+
+test('a GitHub-source install ships a complete package (root cause of the silent no-op)', () => {
+  // The plugin can be installed straight from the GitHub source
+  // (github:lsy1998/dsh-pele-mermaid). That path runs no build step of ours, so the
+  // browser bundle and the Pele runtime must be committed, and the build must not
+  // fail the install when node_modules is absent.
+  const gitignore = readIfExistsSync(workspacePath('.gitignore')) ?? '';
+  assert.ok(
+    !/^lib\/client\.js\s*$/m.test(gitignore) && !/^lib\/pele-runtime\.js\s*$/m.test(gitignore),
+    'the build outputs must not be gitignored: a GitHub install has no build step',
+  );
+  for (const artifact of ['lib/client.js', 'lib/pele-runtime.js', 'lib/index.js']) {
+    assert.ok(existsSync(workspacePath(artifact)), artifact + ' must exist in the package');
+  }
+  const client = readIfExistsSync(workspacePath('lib/client.js'));
+  if (client !== null) {
+    assert.ok(client.includes('__ModuleLoader__'), 'lib/client.js must carry the loader contract');
+    assert.ok(client.includes('dsh-pele-mermaid'), 'lib/client.js must carry the bundle id');
+  }
+  assert.ok(
+    typeof pkg.scripts.prepare === 'string',
+    'a "prepare" script must build the artifacts for npm/git installs',
+  );
+  assert.ok(
+    /build/.test(pkg.scripts.prepare),
+    'the prepare script must run the build',
+  );
 });
 
 test('cordis.patch.yml inserts the ui-pele-mermaid plugin id (SPEC §2)', async () => {

@@ -183,4 +183,56 @@ if (!clientAvailable) {
       assert.ok(paneOverflow === '' || paneOverflow === 'auto' || paneOverflow === 'scroll', 'unexpected overflow: ' + paneOverflow);
     } finally { teardown(); }
   });
+
+  // Regression: a drag must survive the pointer leaving the pane, and a release
+  // outside the pane must end it. The move and release listeners live on the
+  // document, because a pointer that leaves the pane no longer bubbles to it.
+  test('a drag keeps panning after the pointer leaves the pane', async () => {
+    const { handle, pane, teardown } = await boot();
+    try {
+      const doc = handle.doc;
+      const pointer = (type, x, y) => new handle.win.PointerEvent(type, {
+        clientX: x, clientY: y, bubbles: true, cancelable: true,
+        pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1,
+      });
+      pane.dispatchEvent(pointer('pointerdown', 20, 20));
+      // The move targets the document, i.e. the pointer is no longer over the pane.
+      doc.dispatchEvent(pointer('pointermove', 150, 90));
+      await flushAsync(4);
+      assert.notEqual(
+        pane.getAttribute('data-pan-x'), '0',
+        'a drag that leaves the pane must still pan the diagram',
+      );
+    } finally { teardown(); }
+  });
+
+  test('releasing the pointer outside the pane ends the drag', async () => {
+    const { handle, pane, teardown } = await boot();
+    try {
+      const doc = handle.doc;
+      const pointer = (type, x, y) => new handle.win.PointerEvent(type, {
+        clientX: x, clientY: y, bubbles: true, cancelable: true,
+        pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1,
+      });
+      pane.dispatchEvent(pointer('pointerdown', 20, 20));
+      doc.dispatchEvent(pointer('pointermove', 150, 90));
+      await flushAsync(4);
+      assert.equal(pane.getAttribute('data-dragging'), 'true', 'precondition: the drag is active');
+      // Released far away from the pane.
+      doc.dispatchEvent(pointer('pointerup', 900, 900));
+      await flushAsync(4);
+      assert.equal(
+        pane.getAttribute('data-dragging'), null,
+        'a release outside the pane must clear the dragging state',
+      );
+      const after = pane.getAttribute('data-pan-x');
+      doc.dispatchEvent(pointer('pointermove', 400, 300));
+      await flushAsync(4);
+      assert.equal(
+        pane.getAttribute('data-pan-x'), after,
+        'a stray move after the release must not pan any more',
+      );
+    } finally { teardown(); }
+  });
+
 }

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Zoom and pan the inline diagram in place: `Ctrl`/`Cmd` + wheel zooms at the pointer, drag
+  pans, and `+`/`-`/`0`/arrow keys work too. A plain wheel still scrolls the page. The state is
+  per block and resets when the diagram re-renders.
+- The inline pane is a focusable viewport (`tabindex="0"`, `role="group"`, localized label) that
+  announces its current zoom through a polite live region.
+
+### Changed
+
+- The fullscreen viewer opens at the inline pane's current zoom, and closing it restores the
+  inline scroll offsets and zoom before focus returns to the trigger, so the round trip is
+  lossless.
+- The zoom and pan maths live in one shared module (`src/zoom.js`) used by both the inline pane
+  and the fullscreen overlay.
+
 ## [0.1.0] - 2026-10-19
 
 ### Added

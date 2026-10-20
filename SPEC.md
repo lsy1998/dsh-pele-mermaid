@@ -87,7 +87,7 @@ The client **must not** bundle or import pele at build time.
 | --- | --- |
 | SPEC.md, .recon/** | lead |
 | src/client.js, src/detection.js, src/i18n.js, src/styles.js | plugin-core |
-| src/runtime.js, src/viewer.js, src/svg.js, lib/index.js, scripts/build.mjs, package.json, cordis.patch.yml, bin/dsh-pele-mermaid.mjs, icon.svg, .npmrc, .gitignore | viewer-host |
+| src/runtime.js, src/viewer.js, src/svg.js, src/zoom.js, lib/index.js, scripts/build.mjs, package.json, cordis.patch.yml, bin/dsh-pele-mermaid.mjs, icon.svg, .npmrc, .gitignore | viewer-host |
 | test/** (`npm test`), test/fixtures/** | test-harness |
 | README.md, README.zh-CN.md, CHANGELOG.md, LICENSE | docs-release |
 | .verify/** | verifier |
@@ -170,9 +170,15 @@ R7 **Limits** — default 50 000 chars / 2 000 lines; over-limit blocks stay as 
 R8 **Streaming safety** — a monotonic generation counter per block; async runtime load + render results
    are discarded when the block's source changed or the node was detached; renders run through a serial
    queue with a microtask/idle yield between diagrams to keep the page responsive.
-R9 **Viewer** — fullscreen overlay: zoom in/out/reset/fit, pan by drag, wheel with Ctrl/Meta zoom,
-   Escape closes, focus is trapped inside while open and restored to the trigger on close,
-   `role="dialog" aria-modal="true"`, localized labels.
+R9 **Zoom, pan and the viewer** — the INLINE diagram pane supports Ctrl/Meta + wheel zoom at the
+   pointer (a plain wheel still scrolls the page and never zooms), pan by drag, and the
+   `+`/`-`/`0`/arrow keys; the state is per block and resets on re-render. The pane is a focusable
+   viewport (`tabindex="0"`, `role="group"`, localized label) whose current zoom is announced
+   through a polite live region. The fullscreen overlay keeps zoom in/out/reset/fit, pan by drag and
+   Ctrl/Meta + wheel zoom, `Escape` closes, focus is trapped inside while open and restored to the
+   trigger on close, `role="dialog" aria-modal="true"`, localized labels. The round trip is
+   lossless: the overlay opens at the inline pane's effective zoom, and closing it restores the
+   inline scroll offsets and zoom before focus returns to the trigger.
 R10 **Export** — download a standalone `.svg` (`svgFileName`) whose root carries the resolved theme
    variables so it looks the same outside DSH.
 R11 **i18n** — every user-visible string comes from `MESSAGES` via `t()`; `en` + `zh-CN`;
@@ -206,7 +212,9 @@ Resolve values with `getComputedStyle` on the container/body; when a token is em
 Container: `<div class="dsh-pm" data-dsh-pele-mermaid data-view="diagram">` wrapping the original `pre`.
 Children: `.dsh-pm-bar` (toolbar), `.dsh-pm-badge`, `.dsh-pm-btn`, `.dsh-pm-actions`,
 `.dsh-pm-body`, `.dsh-pm-pane` (`data-state="loading|ready|error"`), `.dsh-pm-code`,
-`.dsh-pm-error`, `.dsh-pm-status` (`aria-live="polite"`), viewer: `.dsh-pm-viewer`,
+`.dsh-pm-error`, `.dsh-pm-status` (`aria-live="polite"`), the inline pane as a focusable
+   viewport (`tabindex="0"`, `role="group"`, `data-zoom`/`data-pan-x`/`data-pan-y`) with a
+   `.dsh-pm-sr-only` zoom live region, viewer: `.dsh-pm-viewer`,
 `.dsh-pm-viewer-bar`, `.dsh-pm-viewer-title`, `.dsh-pm-viewport`, `.dsh-pm-stage`, `.dsh-pm-sr-only`.
 Use DSW tokens for our own chrome (`--dsw-alias-*`, `--ds-font-family-code`,
 `--dsw-radius-*`) with literal fallbacks. Respect `prefers-reduced-motion`.

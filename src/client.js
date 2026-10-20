@@ -402,12 +402,16 @@ function enhanceInfo(info) {
   );
   // Inline pane interactions: Ctrl/Meta + wheel zooms at the pointer, a plain
   // wheel is left to the page, drag pans, and the keyboard drives the same state.
+  // The move and release listeners live on the document, not on the pane: a drag
+  // that leaves the pane must keep panning, and a release outside the pane must
+  // still end the drag instead of leaving the pane stuck in the dragging state.
+  const dragDoc = entry.pane.ownerDocument || state.doc;
   entry.listeners.push(
     [pane, 'wheel', (event) => onPaneWheel(entry, event), { passive: false }],
     [pane, 'pointerdown', (event) => onPanePointerDown(entry, event)],
-    [pane, 'pointermove', (event) => onPanePointerMove(entry, event)],
-    [pane, 'pointerup', (event) => onPanePointerUp(entry, event)],
-    [pane, 'pointercancel', (event) => onPanePointerUp(entry, event)],
+    [dragDoc, 'pointermove', (event) => onPanePointerMove(entry, event)],
+    [dragDoc, 'pointerup', (event) => onPanePointerUp(entry, event)],
+    [dragDoc, 'pointercancel', (event) => onPanePointerUp(entry, event)],
     [pane, 'keydown', (event) => onPaneKeydown(entry, event)],
   );
   for (const entryItem of entry.listeners) {
@@ -618,6 +622,11 @@ function onPanePointerDown(entry, event) {
     scrollTop: entry.pane.scrollTop || 0,
   };
   if (entry.pane.setAttribute) entry.pane.setAttribute('data-dragging', 'true');
+  // Capture the pointer so the browser keeps delivering move and release events
+  // even when the cursor leaves the pane.
+  if (event.pointerId != null && entry.pane.setPointerCapture) {
+    try { entry.pane.setPointerCapture(event.pointerId); } catch (error) { /* optional */ }
+  }
   if (typeof entry.pane.focus === 'function') {
     try { entry.pane.focus(); } catch (error) { /* focus is best-effort */ }
   }

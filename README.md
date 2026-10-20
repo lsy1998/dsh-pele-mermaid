@@ -35,9 +35,13 @@ rendered.
   original `pre` element is preserved for code view.
 - Toolbar badge that names the detected diagram type next to "Pele", plus fullscreen and
   **Download SVG** actions.
+- Zoom and pan in place: hold `Ctrl` (or `Cmd`) and scroll the wheel to zoom at the pointer,
+  drag to pan, and use `+`, `-`, `0` and the arrow keys. A plain wheel still scrolls the page.
+  The state is per block and resets when the diagram re-renders.
 - Fullscreen viewer: zoom in / out / reset / fit, drag to pan, `Ctrl` or `Cmd` + wheel to zoom at
   the pointer, `Escape` to close, focus trapped while open and returned to the trigger on close,
-  `role="dialog"` and `aria-modal="true"`.
+  `role="dialog"` and `aria-modal="true"`. It opens at the inline zoom and restores the inline
+  scroll position and zoom when you close it.
 - Exports a standalone `.svg` file named `pele-<type>-YYYYMMDD-HHmmss.svg` whose root carries the
   resolved theme variables, so it looks the same outside DSH.
 - Adapts to the DSW light and dark themes by mapping DSW design tokens onto Pele CSS variables.
@@ -181,7 +185,8 @@ The block becomes a card that wraps the original `pre`. Diagram view is shown fi
 | Errors | A `PeleError` (or any thrown value) shows the source and a localized message, with line/column when available. Error text is inserted as text, never as HTML. |
 | Limits | 50,000 characters and 2,000 lines per block. Over-limit blocks stay as source with a localized notice and are never rendered. |
 | Streaming | A monotonic generation counter per block; results are discarded when the source changed or the node was detached. Renders run through a serial queue with a yield between diagrams. |
-| Viewer | Fullscreen overlay with zoom in/out/reset/fit, drag pan, `Ctrl`/`Cmd` + wheel zoom, `Escape` to close, trapped focus, and localized labels. |
+| Inline zoom | The inline pane zooms with `Ctrl`/`Cmd` + wheel at the pointer, pans by drag, and takes `+`/`-`/`0`/arrow keys. A plain wheel is not swallowed. The state is per block and resets on re-render. |
+| Viewer | Fullscreen overlay with zoom in/out/reset/fit, drag pan, `Ctrl`/`Cmd` + wheel zoom, `Escape` to close, trapped focus, and localized labels. It opens at the inline zoom and restores the inline scroll and zoom on close. |
 | Export | A standalone `.svg` whose root carries the resolved theme variables. |
 | i18n | Every user-visible string comes from the message catalog; `en` and `zh-CN`; language from `document.documentElement.lang` or `navigator.language`, switched live. |
 | Disposal | Observers and listeners are registered in the plugin's effect scope and released on cleanup; a repeated apply/cleanup/apply cycle leaves no duplicates. |

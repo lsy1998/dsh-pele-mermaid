@@ -56,7 +56,7 @@ export const CSS = `
 .dsh-pm[data-view='diagram'] .dsh-pm-code{display:none}
 .dsh-pm[data-view='code'][data-state='error'] .dsh-pm-error{display:block}
 .dsh-pm:not([data-state='ready']) .dsh-pm-action{display:none}
-.dsh-pm-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
+.dsh-pm-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;isolation:isolate;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-pm-viewer[hidden]{display:none}
 /* The bar wraps instead of pushing the close control off-screen: with a 12px font,

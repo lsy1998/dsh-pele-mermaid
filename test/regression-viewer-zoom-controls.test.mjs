@@ -223,12 +223,20 @@ if (!clientAvailable) {
       await flushAsync(2);
       const overlay = handle.doc.querySelector('.dsh-pm-viewer');
       assert.ok(overlay, 'the overlay must open');
-      click(handle, overlay.querySelector('.dsh-pm-viewer-bar'));
-      await flushAsync(2);
-      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a click on the bar must not close the overlay');
-      click(handle, overlay.querySelector('.dsh-pm-viewport'));
+      // A click on the DIAGRAM is a click on the svg; the empty area around it is the
+      // "page" and does close the viewer (the viewport fills the overlay).
+      const svg = overlay.querySelector('.dsh-pm-viewport svg');
+      assert.ok(svg, 'the diagram must be mounted');
+      click(handle, svg);
       await flushAsync(2);
       assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a click on the diagram must not close the overlay');
+      click(handle, handle.doc.querySelector('.dsh-pm-viewer').querySelector('.dsh-pm-viewer-bar'));
+      await flushAsync(2);
+      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a click on the bar must not close the overlay');
+      // The page around the diagram still closes the viewer.
+      click(handle, handle.doc.querySelector('.dsh-pm-viewer').querySelector('.dsh-pm-viewport'));
+      await flushAsync(2);
+      assert.equal(handle.doc.querySelector('.dsh-pm-viewer'), null, 'a click on the empty page closes the viewer');
     } finally { teardown(); }
   });
 

@@ -69,6 +69,9 @@ export function createViewer(deps) {
   var drag = null;
   // Set by a press that actually moved: the click that ends that press is a pan, not a click.
   var dragMoved = false;
+  // Set when a press began on the diagram or the chrome: the click that ends it is not a
+  // click on the empty page and must not close the viewer.
+  var pressMarked = false;
   var currentType = 'diagram';
   var closeHandler = null;
   var listeners = [];
@@ -325,6 +328,8 @@ export function createViewer(deps) {
   function onPointerDown(event) {
     if (!isOpenState) return;
     if (event && event.button != null && event.button !== 0) return;
+    var target = event && event.target;
+    pressMarked = !!(target && target.closest && target.closest('svg, ' + CHROME_SELECTOR));
     // A press that begins on a control is that control's, not the start of a drag.
     if (fromControl(event)) return;
     dragMoved = false;
@@ -478,15 +483,26 @@ export function createViewer(deps) {
     else if (key === 'ArrowDown') panBy(0, step);
   }
 
+/** The interactive parts of the viewer chrome inside the viewport (a click on one is not a click on the page). */
+  var CHROME_SELECTOR = 'button, a, input, select, textarea, [contenteditable], [role="button"]';
+
   /**
-   * The diagram viewport fills the whole overlay below the bar, so it IS the "page around the
-   * diagram": a plain click there closes the viewer, exactly like a click on the old backdrop
-   * did. A press that panned the diagram is not a click and never closes it.
+   * The diagram viewport fills the whole overlay below the bar, so it doubles as the "page
+   * around the diagram".
+   *
+   * A viewed SVG swallows pointerdown/pointerup once the press starts, so in a real browser a
+   * click on the DIAGRAM bubbles as a click whose target is only the viewport. Closing on that
+   * would make "click the diagram" also mean "close", which is wrong. The close therefore
+   * looks at the press itself (pressMarked): a press on the svg, on any chrome control or on
+   * a drag is not a background click; only a plain press on the empty page closes.
    */
   function onViewportClick(event) {
     swallow(event);
     if (!isOpenState) return;
+    var target = event && event.target;
+    if (target && target.closest && target.closest('svg, ' + CHROME_SELECTOR)) return;
     if (dragMoved) { dragMoved = false; return; }
+    if (pressMarked) { pressMarked = false; return; }
     closeViewer();
   }
 

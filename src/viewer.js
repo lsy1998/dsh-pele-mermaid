@@ -8,6 +8,7 @@
  * (src/client.js) - this module only owns the overlay DOM and its behaviour.
  */
 
+import { BUILD_STAMP } from './build-stamp.js';
 import {
   ZOOM_STEP,
   applyTransform,
@@ -29,6 +30,8 @@ var FALLBACK_MESSAGES = {
 
 var INTERPOLATE_RE = /\{(\w+)\}/g;
 var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+/** Pointer movement that turns a press into a pan rather than a click. */
+var DRAG_SLOP = 3;
 
 export function createViewer(deps) {
   var options = deps || {};
@@ -61,11 +64,19 @@ export function createViewer(deps) {
   var zoom = createZoomState();
   var trigger = null;
   var bar = null;
+  var buildEl = null;
   var backdrop = null;
   var drag = null;
+  // Set by a press that actually moved: the click that ends that press is a pan, not a click.
+  var dragMoved = false;
   var currentType = 'diagram';
   var closeHandler = null;
   var listeners = [];
+  // Diagnostics: a live event log, toggled with Ctrl+Shift+D, that answers "did the click
+  // even reach the viewer?" without opening developer tools.
+  var diag = null;
+  var diagOn = false;
+  var diagLines = [];
 
   function listen(target, type, handler, listenerOptions) {
     if (!target || typeof target.addEventListener !== 'function') return;
@@ -163,6 +174,15 @@ export function createViewer(deps) {
     root.setAttribute('aria-label', t('viewerLabel'));
     root.setAttribute('hidden', '');
 
+    // The click-to-close surface is the overlay's FIRST child, so every stage of the viewer
+    // (bar, viewport, live region) is appended after it and therefore paints above it. It used
+    // to be appended LAST, which put a full-window transparent surface on top of the toolbar
+    // and the diagram: every press on a control landed on it and closed the viewer.
+    backdrop = el('div', 'dsh-pm-viewer-backdrop');
+    backdrop.setAttribute('aria-hidden', 'true');
+    backdrop.onclick = function () { closeViewer(); };
+    root.appendChild(backdrop);
+
     bar = el('div', 'dsh-pm-viewer-bar');
     titleEl = el('div', 'dsh-pm-viewer-title');
     bar.appendChild(titleEl);
@@ -174,6 +194,13 @@ export function createViewer(deps) {
     actions.appendChild(button('resetZoom', '1:1', function () { resetToNatural(); }));
     // The exit control is a TEXT button, not a bare glyph: it must be findable.
     actions.appendChild(textButton('closeViewer', '✕', function () { closeViewer(); }, 'exitFullscreen'));
+    // The build stamp: which version of the plugin this page actually loaded. A stale
+    // bundle then answers "did my update take effect?" without opening a terminal.
+    buildEl = el('span', 'dsh-pm-viewer-build');
+    buildEl.setAttribute('data-build-stamp', BUILD_STAMP);
+    buildEl.setAttribute('title', 'dsh-pele-mermaid build: ' + BUILD_STAMP);
+    buildEl.textContent = BUILD_STAMP;
+    actions.appendChild(buildEl);
     bar.appendChild(actions);
     root.appendChild(bar);
 
@@ -189,14 +216,6 @@ export function createViewer(deps) {
     liveEl.setAttribute('aria-live', 'polite');
     liveEl.setAttribute('aria-label', t('statusLabel'));
     root.appendChild(liveEl);
-
-    // A click on the area around the diagram closes the overlay. It is appended LAST, so it
-    // sits behind the bar and the viewport in the paint order: a click on either of those is
-    // swallowed by their own listener and never reaches the backdrop.
-    backdrop = el('div', 'dsh-pm-viewer-backdrop');
-    backdrop.setAttribute('aria-hidden', 'true');
-    backdrop.onclick = function () { closeViewer(); };
-    root.appendChild(backdrop);
 
     attachOverlay();
     built = true;
@@ -308,6 +327,7 @@ export function createViewer(deps) {
     if (event && event.button != null && event.button !== 0) return;
     // A press that begins on a control is that control's, not the start of a drag.
     if (fromControl(event)) return;
+    dragMoved = false;
     drag = { x: event.clientX, y: event.clientY, tx: zoom.tx, ty: zoom.ty };
     if (event && event.pointerId != null && viewport && typeof viewport.setPointerCapture === 'function') {
       try { viewport.setPointerCapture(event.pointerId); } catch (error) { /* optional */ }
@@ -318,6 +338,11 @@ export function createViewer(deps) {
 
   function onPointerMove(event) {
     if (!drag || !event) return;
+    // A press that moved is a pan, not a click: the click that ends it must not close the
+    // viewer (see onViewportClick).
+    if (Math.abs(event.clientX - drag.x) > DRAG_SLOP || Math.abs(event.clientY - drag.y) > DRAG_SLOP) {
+      dragMoved = true;
+    }
     zoom.tx = drag.tx + (event.clientX - drag.x);
     zoom.ty = drag.ty + (event.clientY - drag.y);
     apply();
@@ -347,6 +372,46 @@ export function createViewer(deps) {
 
   function onResize() {
     if (isOpenState) fitToWindow();
+  }
+
+  /** Render the diagnostics panel: the build, the last events and the current geometry. */
+  function diagRender() {
+    if (!diag) return;
+    var size = viewportSize();
+    var body = diagLines.slice(-14);
+    diag.textContent = 'dsh-pele-mermaid ' + BUILD_STAMP + '\n' +
+      'viewport ' + Math.round(size.width) + 'x' + Math.round(size.height) + ' | stage ' +
+      (stage ? stage.style.transform : '-') + '\n' + body.join('\n');
+  }
+
+  /** Record one event in the diagnostics log. */
+  function diagLog(event, label) {
+    if (!diagOn || !diag) return;
+    var target = event && event.target;
+    var name = target && target.className ? (target.className + '').split(' ')[0] : (target && target.nodeName);
+    diagLines.push((label || 'event') + ' @' + (event && event.clientX) + ',' + (event && event.clientY) +
+      ' -> ' + name + (event && event.defaultPrevented ? ' (prevented)' : ''));
+    diagRender();
+  }
+
+  function toggleDiag() {
+    diagOn = !diagOn;
+    if (diagOn && !diag) {
+      diag = el('pre', 'dsh-pm-viewer-diag');
+      root.appendChild(diag);
+      diagRender();
+    } else if (diag) {
+      diag.textContent = '';
+      diag.style.display = diagOn ? 'block' : 'none';
+    }
+  }
+
+  /** Ctrl+Shift+D anywhere in the page toggles the diagnostics panel while the viewer is open. */
+  function onDiagKey(event) {
+    if (!event || !event.ctrlKey || !event.shiftKey || String(event.key).toLowerCase() !== 'd') return;
+    event.preventDefault();
+    if (!isOpenState) return;
+    toggleDiag();
   }
 
   function focusableNodes() {
@@ -413,6 +478,18 @@ export function createViewer(deps) {
     else if (key === 'ArrowDown') panBy(0, step);
   }
 
+  /**
+   * The diagram viewport fills the whole overlay below the bar, so it IS the "page around the
+   * diagram": a plain click there closes the viewer, exactly like a click on the old backdrop
+   * did. A press that panned the diagram is not a click and never closes it.
+   */
+  function onViewportClick(event) {
+    swallow(event);
+    if (!isOpenState) return;
+    if (dragMoved) { dragMoved = false; return; }
+    closeViewer();
+  }
+
   /** A click inside the chrome must not fall through to the backdrop. */
   function swallow(event) {
     if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
@@ -430,7 +507,13 @@ export function createViewer(deps) {
     // The bar and the viewport sit above the backdrop, so their clicks must not bubble to it:
     // clicking a zoom button, or dragging the diagram, must not close the overlay.
     listen(bar, 'click', swallow);
-    listen(viewport, 'click', swallow);
+    listen(viewport, 'click', onViewportClick);
+    // The diagnostic taps come AFTER the real handlers (so an early close is still recorded)
+    // and observe without ever preventing or stopping anything.
+    listen(root, 'pointerdown', function (event) { diagLog(event, 'down'); }, { passive: true });
+    listen(root, 'click', function (event) { diagLog(event, 'click'); }, { passive: true });
+    listen(root, 'pointerup', function (event) { diagLog(event, 'up'); }, { passive: true });
+    listen(doc, 'keydown', onDiagKey);
   }
 
   function openViewer(settings) {
@@ -508,10 +591,15 @@ export function createViewer(deps) {
     liveEl = null;
     backdrop = null;
     bar = null;
+    buildEl = null;
+    diag = null;
+    diagOn = false;
+    diagLines = [];
     built = false;
   }
 
   return {
+    build: BUILD_STAMP,
     open: openViewer,
     close: closeViewer,
     isOpen: isOpen,

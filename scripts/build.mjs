@@ -13,7 +13,7 @@
  * file directly, so it also works where the sandbox denies piped child processes.
  */
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,7 @@ const OUT_HOST = join(ROOT, 'lib', 'index.js');
 const PELE_GLOBAL = join(ROOT, 'node_modules', 'pele', 'dist', 'pele.global.js');
 const OUT_RUNTIME = join(ROOT, 'lib', 'pele-runtime.js');
 const TMP_DIR = join(ROOT, '.build-tmp');
+const STAMP_FILE = join(ROOT, 'src', 'build-stamp.js');
 
 /** Loader contract from SPEC section 2: a single self-executing factory call. */
 const BANNER = `window.__ModuleLoader__.load({id:"${PACKAGE_ID}",factory:(require)=>{var module={exports:{}};var exports=module.exports;`;
@@ -110,6 +111,20 @@ async function runEsbuildApi(entry, outRaw, metaPath) {
   await writeFile(metaPath, JSON.stringify(result.metafile));
 }
 
+/** The version/short-commit/time of this build, injected into src/build-stamp.js. */
+function buildStamp() {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  let commit = 'nogit';
+  try {
+    const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' });
+    if (head.status === 0 && head.stdout) commit = head.stdout.trim();
+  } catch (error) { /* a source tarball has no git */ }
+  const when = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  // ASCII only: the build file is written through PowerShell, where a non-ASCII separator
+  // can come back mangled.
+  return `v${pkg.version}+${commit} at ${when}`;
+}
+
 async function bundleRaw(entry, outRaw, metaPath) {
   const binary = esbuildBinaryCandidates().find((candidate) => existsSync(candidate));
   if (binary) {
@@ -124,6 +139,9 @@ async function buildClient(entry, esbuildUsed) {
   const outRaw = join(TMP_DIR, 'client.raw.js');
   const metaPath = join(TMP_DIR, 'meta.json');
   await mkdir(TMP_DIR, { recursive: true });
+  const stamp = buildStamp();
+  await writeFile(STAMP_FILE,
+    '/**\n * Build stamp — tells a running page WHICH build of the plugin it actually loaded.\n *\n * Written by scripts/build.mjs: version, short commit and UTC build time, shown in the\n * fullscreen viewer bar. "unbuilt" means the bundle was not produced by the build script.\n */\nexport const BUILD_STAMP = ' + JSON.stringify(stamp) + ';\n');
   await bundleRaw(entry, outRaw, metaPath);
 
   const meta = JSON.parse(await readFile(metaPath, 'utf8'));
@@ -200,6 +218,7 @@ async function main() {
   await rm(TMP_DIR, { recursive: true, force: true });
 
   console.log('dsh-pele-mermaid build');
+  console.log(`  build               ${buildStamp()}`);
   console.log(`  entry               ${entry}`);
   console.log(`  lib/client.js       ${Buffer.byteLength(client.text)} bytes`);
   console.log(`  lib/pele-runtime.js ${runtime.bytes} bytes`);

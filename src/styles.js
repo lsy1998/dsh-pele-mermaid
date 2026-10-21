@@ -75,6 +75,9 @@ body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias
    click anywhere around the diagram closes the viewer. */
 .dsh-pm-viewer-backdrop{position:fixed;inset:0;z-index:1;background:transparent;border:0;padding:0;cursor:default}
 body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
+.dsh-pm-viewer-diag{position:absolute;right:12px;top:56px;z-index:5;max-width:min(640px,calc(100vw - 24px));margin:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.35));border-radius:6px;background:var(--dsw-alias-bg-layer-1,rgba(20,20,20,.96));color:var(--dsw-alias-label-primary,#eee);font:11px/16px var(--ds-font-family-code,ui-monospace,monospace);white-space:pre-wrap;overflow:hidden;pointer-events:none}
+.dsh-pm-viewer-build{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);opacity:.85;cursor:default;user-select:text}
+@media (max-width:759px){.dsh-pm-viewer-build{display:none}}
 .dsh-pm-viewer-title{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#555);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.35))}
 body[data-ds-dark-theme] .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#ddd)}

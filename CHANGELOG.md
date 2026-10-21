@@ -15,12 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The inline pane is a focusable viewport (`tabindex="0"`, `role="group"`, localized label) that
   announces its current zoom through a polite live region.
 - Zoom in / Zoom out / Reset zoom buttons on the inline diagram toolbar.
+- Build stamp in the fullscreen viewer: the bar shows `v0.1.0+<commit> at <UTC time>` and
+  carries it in `data-build-stamp`, so a page can be told apart from an older cached bundle no
+  matter how it was installed.
 - Discoverability for the DSH plugin ecosystem: the repository carries the `deepseek-harness`
   and `dsh-plugin` topics, `dsh-plugin` is an npm keyword, and both READMEs point at the GitHub
   topic listings and dshmarket.com.
 
 ### Fixed
 
+- **A click anywhere in the fullscreen viewer closed it.** The transparent click-to-close
+  backdrop was appended last and still painted above the toolbar and the diagram, so the first
+  click on a zoom control (or anywhere else) hit the backdrop and closed the viewer; that is why
+  the controls looked dead. The backdrop is now the overlay's first child, so nothing above it
+  can be covered, the viewport itself carries the click-to-close behaviour, and a press that
+  panned the diagram never counts as a click.
 - **Nothing could reach the fullscreen viewer's controls or start a drag.** The transparent
   click-to-close backdrop was painted above the toolbar and the diagram surface, so a press on a
   zoom button or on the diagram never left the backdrop: the controls looked dead and the diagram

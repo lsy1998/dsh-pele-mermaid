@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The fullscreen zoom/fit controls did nothing at the centre of the diagram.** The stage was
+  anchored at the viewport centre in CSS while the zoom maths put the diagram at the top-left,
+  so every control changed the scale invisibly and moved the diagram off to the right and below
+  the window; the image only came into view at high zoom, as if the buttons did nothing. The
+  stage is now anchored at its top-left corner, where the maths puts it.
 - **Export cropped the diagram.** `Download SVG` exported the on-screen `<svg>`, which carried the
   inline zoom styles, so the file showed only the visible part and had no natural size. The export
   now uses the pristine render result at its natural size and is identical whether or not the

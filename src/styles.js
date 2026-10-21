@@ -80,7 +80,7 @@ body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-
 body[data-ds-dark-theme] .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#ddd)}
 .dsh-pm-viewport{position:relative;flex:1;min-height:0;overflow:hidden;cursor:grab;touch-action:none}
 .dsh-pm-viewport[data-dragging='true']{cursor:grabbing}
-.dsh-pm-stage{position:absolute;left:50%;top:50%;transform-origin:center;will-change:transform}
+.dsh-pm-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .dsh-pm-stage svg{display:block;max-width:none;height:auto;background:transparent}
 @media (prefers-reduced-motion:reduce){.dsh-pm *,.dsh-pm-viewer *,.dsh-pm-viewer{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media (forced-colors:active){.dsh-pm-btn:focus-visible{outline-color:Highlight}}

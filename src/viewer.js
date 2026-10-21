@@ -247,9 +247,20 @@ export function createViewer(deps) {
     return { width: width > 0 ? width : 800, height: height > 0 ? height : 600 };
   }
 
+  /**
+   * Put the zoom state on the stage and report it.
+   *
+   * The stage is anchored at its TOP-LEFT corner (styles.js) and the translate is the content's
+   * top-left position in the viewport, which is exactly what zoom.js computes (fit/zoom/reset
+   * all centre through the same (viewport - natural * scale) / 2). Keeping the CSS anchor and
+   * the maths in the same coordinate space is what makes every control visibly work: with a
+   * centre anchor the translate was applied from the centre and the diagram was painted off to
+   * the right and below the window, so the controls looked dead.
+   */
   function apply() {
     if (!stage) return;
-    applyTransform(stage, zoom, { mode: 'transform' });
+    var size = viewportSize();
+    applyTransform(stage, { scale: zoom.scale, tx: zoom.tx, ty: zoom.ty }, { mode: 'transform' });
     announce(Math.round(zoom.scale * 100) + '%');
   }
 

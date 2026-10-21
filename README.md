@@ -12,6 +12,8 @@ npm run build
 Render Mermaid fenced code blocks in the DeepSeek Harness (DSH) Web GUI as SVG diagrams with
 **Pele** — no mermaid.js runtime is bundled or loaded.
 
+**Topics:** `deepseek-harness` · `dsh-plugin` · `mermaid` · `plugin`
+
 [Pele](https://github.com/obsidianmd/pele) is the lightweight Mermaid-to-SVG renderer from the
 Obsidian team (`pele@1.6.0`, MIT). It supports the diagram types built into **Mermaid 12.1.0**
 and is themed with CSS variables.
@@ -268,6 +270,15 @@ This plugin's responsibilities:
   recognize fall back to source with an `unsupported-diagram` message.
 - DSH developer preview. Verified against the bundled desktop runtime `0.2.1-rc.2` and the
   `dsh` CLI `0.1.7-rc.1` on Windows, Node.js v22.18.0, npm 10.9.3 and pnpm 11.21.0.
+
+## Finding plugins
+
+This repository carries the `deepseek-harness` and `dsh-plugin` topics, so it is listed with the
+other DeepSeek Harness plugins — browse them with
+[GitHub topic: deepseek-harness](https://github.com/topics/deepseek-harness) and
+[GitHub topic: dsh-plugin](https://github.com/topics/dsh-plugin).
+
+More DSH plugins and a one-click installer live at [dshmarket.com](https://dshmarket.com).
 
 ## Develop from source
 

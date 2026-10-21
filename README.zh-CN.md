@@ -12,6 +12,8 @@ npm run build
 在 DeepSeek Harness（DSH）Web 界面中用 **Pele** 把 Mermaid 围栏代码块渲染为 SVG 图表，
 **不打包也不加载 mermaid.js 运行时**。
 
+**标签：** `deepseek-harness` · `dsh-plugin` · `mermaid` · `plugin`
+
 [Pele](https://github.com/obsidianmd/pele) 是 Obsidian 团队出品的轻量 Mermaid 转 SVG 渲染器
 （`pele@1.6.0`，MIT）。它支持 **Mermaid 12.1.0** 内置的全部图表类型，并使用 CSS 变量适配主题。
 
@@ -245,6 +247,14 @@ HTML 标签，`click` 语句中的 JavaScript 回调会被忽略。链接只允�
   `unsupported-diagram` 信息。
 - DSH 开发者预览版。已在 Windows、Node.js v22.18.0、npm 10.9.3、pnpm 11.21.0 环境下，对随应用
   分发的桌面运行时 `0.2.1-rc.2` 与 `dsh` CLI `0.1.7-rc.1` 进行核对。
+
+## 发现更多插件
+
+本仓库带有 `deepseek-harness` 与 `dsh-plugin` 标签，会和其他 DeepSeek Harness 插件一起出现在
+[GitHub 话题：deepseek-harness](https://github.com/topics/deepseek-harness) 和
+[GitHub 话题：dsh-plugin](https://github.com/topics/dsh-plugin) 中。
+
+更多 DSH 插件与一键安装请访问 [dshmarket.com](https://dshmarket.com)。
 
 ## 从源码开发
 

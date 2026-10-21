@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The inline pane is a focusable viewport (`tabindex="0"`, `role="group"`, localized label) that
   announces its current zoom through a polite live region.
 - Zoom in / Zoom out / Reset zoom buttons on the inline diagram toolbar.
+- Discoverability for the DSH plugin ecosystem: the repository carries the `deepseek-harness`
+  and `dsh-plugin` topics, `dsh-plugin` is an npm keyword, and both READMEs point at the GitHub
+  topic listings and dshmarket.com.
 
 ### Fixed
 

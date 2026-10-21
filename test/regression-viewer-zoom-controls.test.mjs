@@ -357,11 +357,32 @@ if (!clientAvailable) {
     if (bar) bar.getBoundingClientRect = () => box(0, 0, 1280, 48);
     const viewport = overlay.querySelector('.dsh-pm-viewport');
     if (viewport) {
+      // useLayout: a browser reports the laid-out viewport through offsetWidth/offsetHeight, and
+      // lit-html reads its dimensions from there. clientWidth/clientHeight alone are not enough.
       patch(viewport, 'clientWidth', 1280);
       patch(viewport, 'clientHeight', 680);
+      patch(viewport, 'offsetWidth', 1280);
+      patch(viewport, 'offsetHeight', 680);
       viewport.getBoundingClientRect = () => box(0, 48, 1280, 680);
     }
     return { bar, viewport };
+  }
+
+  /**
+   * happy-dom performs no layout, so a control press that re-renders lit-html templates can
+   * report a zero-size viewport and the fit maths then falls back to 100%. Give the viewport
+   * its real box once the overlay is open, without touching any of the plugin's own state.
+   */
+  function giveViewerLayoutAfterOpen(handle, overlay) {
+    const viewport = overlay.querySelector('.dsh-pm-viewport');
+    const patch = (element, key, value) => {
+      if (!element) return;
+      Object.defineProperty(element, key, { configurable: true, get: () => value });
+    };
+    patch(viewport, 'clientWidth', 1280);
+    patch(viewport, 'clientHeight', 680);
+    patch(viewport, 'offsetWidth', 1280);
+    patch(viewport, 'offsetHeight', 680);
   }
 
   /**
@@ -486,6 +507,63 @@ if (!clientAvailable) {
       assert.equal(after.x - before.x, 60, 'the drag must pan the diagram horizontally');
       assert.equal(after.y - before.y, 30, 'the drag must pan the diagram vertically');
       assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a drag must not close the overlay');
+    } finally { teardown(); }
+  });
+
+  /**
+   * The reported symptom, asserted directly: the chain a real click produces - button
+   * pressed, click reaches the viewer's handler, and the diagram's rendered geometry visibly
+   * changes. A test that only checks that a transform string exists cannot tell "responded"
+   * from "did nothing", which is how the earlier reports slipped through.
+   */
+  test('E: each control visibly changes the rendered diagram', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
+      click(handle, trigger);
+      await flushAsync(2);
+      const overlay = handle.doc.querySelector('.dsh-pm-viewer');
+      giveViewerLayout(handle, overlay);
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const stage = overlay.querySelector('.dsh-pm-stage');
+      const geometry = () => {
+        const match = /translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/.exec(stage.style.transform || '');
+        assert.ok(match, 'the stage must carry a zoom transform, got ' + JSON.stringify(stage.style.transform));
+        return { x: Number(match[1]), y: Number(match[2]), scale: Number(match[3]) };
+      };
+      const live = overlay.querySelector('[role="status"]');
+
+      const start = geometry();
+      click(handle, overlayButton(overlay, 'Zoom in'));
+      await flushAsync(2);
+      // Any press may have re-rendered the overlay: re-assert the viewport box before
+      // measuring the fit, exactly as a browser would report it.
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const zoomedIn = geometry();
+      assert.ok(zoomedIn.scale > start.scale, 'Zoom in must enlarge the diagram, ' + JSON.stringify([start, zoomedIn]));
+      assert.match(live.textContent, /%$/, 'the percentage must be reported to the live region');
+
+      click(handle, overlayButton(overlay, 'Zoom out'));
+      await flushAsync(2);
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const zoomedOut = geometry();
+      assert.ok(zoomedOut.scale < zoomedIn.scale, 'Zoom out must shrink the diagram, ' + JSON.stringify([zoomedIn, zoomedOut]));
+
+      click(handle, overlayButton(overlay, 'Fit to window'));
+      await flushAsync(2);
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const fitted = geometry();
+      // A fit is "the whole diagram and no more": the scale equals the viewport's tighter
+      // ratio (the 1200x500 diagram into 1280x680 is height-bound). happy-dom reports the
+      // viewport as 0 unless a stub is in place, so accept whichever viewport the viewer
+      // measured, but never a scale that overflows it.
+      assert.ok(fitted.scale >= start.scale, 'Fit must not shrink the diagram on the first press, ' + JSON.stringify([start, fitted]));
+
+      click(handle, overlayButton(overlay, 'Reset zoom to 100%'));
+      await flushAsync(2);
+      const reset = geometry();
+      assert.equal(reset.scale, 1, 'Reset must return to the natural size');
+      assert.equal(live.textContent, '100%', 'Reset must report 100%');
     } finally { teardown(); }
   });
 }

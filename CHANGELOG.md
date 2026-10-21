@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Nothing could reach the fullscreen viewer's controls or start a drag.** The transparent
+  click-to-close backdrop was painted above the toolbar and the diagram surface, so a press on a
+  zoom button or on the diagram never left the backdrop: the controls looked dead and the diagram
+  could not be dragged in the fullscreen viewer, while the inline pane was unaffected. The
+  backdrop now sits under both (z-index 1, toolbar at 2), a press that starts on a control is no
+  longer treated as a drag, and the drag handles a press it ignored.
 - **The fullscreen zoom/fit controls did nothing at the centre of the diagram.** The stage was
   anchored at the viewport centre in CSS while the zoom maths put the diagram at the top-left,
   so every control changed the scale invisibly and moved the diagram off to the right and below

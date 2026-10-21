@@ -296,13 +296,23 @@ export function createViewer(deps) {
     apply();
   }
 
+  /** True when the event started on one of the overlay's own controls (a button must stay a click). */
+  function fromControl(event) {
+    var target = event && event.target;
+    if (!target || typeof target.closest !== 'function') return false;
+    return !!target.closest('button, a, input, [contenteditable]');
+  }
+
   function onPointerDown(event) {
     if (!isOpenState) return;
     if (event && event.button != null && event.button !== 0) return;
+    // A press that begins on a control is that control's, not the start of a drag.
+    if (fromControl(event)) return;
     drag = { x: event.clientX, y: event.clientY, tx: zoom.tx, ty: zoom.ty };
     if (event && event.pointerId != null && viewport && typeof viewport.setPointerCapture === 'function') {
       try { viewport.setPointerCapture(event.pointerId); } catch (error) { /* optional */ }
     }
+    if (!drag) return;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
   }
 

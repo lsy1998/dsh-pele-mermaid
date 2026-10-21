@@ -322,52 +322,79 @@ if (!clientAvailable) {
       assert.equal(svg.style.maxWidth, 'none', 'a zoomed svg must not be clamped by max-width');
     } finally { teardown(); }
   });
-
   /* ---------------------------------------------------------------- *
    * Defect E — "the three buttons do nothing" in the FULLSCREEN viewer
    *
-   * The real-world repro: the block sits far down the chat scroller and the overlay covers
-   * the window. A click on a viewer control that empties the overlay's content (stage,
-   * viewport) or moves the bar does not merely mis-render: the page scrolls so the next
-   * click, at the same screen point, lands on empty background instead of a button. To the
-   * user that is "the buttons do nothing", exactly as reported.
-   *
-   * These tests pin the overlay's own geometry instead of the pixels: the viewer never
-   * scrolls the document behind it, and a control press keeps the bar and every control in
-   * the same place in the window.
+   * The report: in the fullscreen viewer the zoom/fit controls look dead and the diagram
+   * cannot be dragged, while the inline pane is fine. Both are the same failure - nothing
+   * reaches the overlay's own handlers - so the tests below drive a REAL pointer sequence
+   * (pointerdown, pointermove, pointerup, click) with hit testing that respects z-order,
+   * which happy-dom's dispatchEvent cannot see.
    * ---------------------------------------------------------------- */
 
   const overlayButton = (overlay, name) =>
     [...overlay.querySelectorAll('button')].find((b) => accessibleName(b) === name);
 
+  const overlayRect = (overlay) => {
+    const rect = overlay.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  };
+
   /**
-   * The viewer's geometry, the way a browser would report it in an 1280x728 window: a 48px
-   * bar pinned to the first row, a viewport that fills the rest, the stage at its centre.
+   * A viewport-sized box for any element, so the overlay's own geometry can be measured.
+   * happy-dom has no layout engine and every rect is a zero box.
    */
-  function layOutOverlay(doc, overlay) {
-    const bar = overlay.querySelector('.dsh-pm-viewer-bar');
-    const stage = overlay.querySelector('.dsh-pm-stage');
-    const viewport = overlay.querySelector('.dsh-pm-viewport');
-    const box = (top) => () => ({ left: 0, top, width: 1280, height: 48, right: 1280, bottom: top + 48, x: 0, y: top });
+  function giveViewerLayout(handle, overlay) {
+    const win = handle.win;
+    const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top });
     const patch = (element, key, value) => {
       if (!element) return;
       Object.defineProperty(element, key, { configurable: true, get: () => value });
     };
-    patch(viewport, 'clientWidth', 1280);
-    patch(viewport, 'clientHeight', 680);
-    if (bar) {
-      bar.getBoundingClientRect = box(0);
-      // A bar that is still inside the overlay sits at the top of the window; a bar that was
-      // moved (or detached) is far below its content.
-      patch(bar, 'offsetTop', overlay.contains(bar) ? 0 : 5000);
+    win.document.body.getBoundingClientRect = () => box(0, 0, 1280, 728);
+    overlay.getBoundingClientRect = () => box(0, 0, 1280, 728);
+    const bar = overlay.querySelector('.dsh-pm-viewer-bar');
+    if (bar) bar.getBoundingClientRect = () => box(0, 0, 1280, 48);
+    const viewport = overlay.querySelector('.dsh-pm-viewport');
+    if (viewport) {
+      patch(viewport, 'clientWidth', 1280);
+      patch(viewport, 'clientHeight', 680);
+      viewport.getBoundingClientRect = () => box(0, 48, 1280, 680);
     }
-    if (stage) {
-      stage.getBoundingClientRect = () => ({ left: 40, top: 48, width: 1200, height: 500, right: 1240, bottom: 548, x: 40, y: 48 });
-    }
-    return { bar, stage, viewport };
+    return { bar, viewport };
   }
 
-  test('E: a control press never moves the overlay bar out from under the pointer', async () => {
+  /**
+   * Hit test the way a browser does: walk the overlay's children from the LAST (painted on
+   * top) to the first and return the first one whose box contains the point. Elements that
+   * are hidden or have pointer-events:none are never hit. This is what shows whether a
+   * control is really in front of the backdrop/bar it sits under.
+   */
+  function hitTest(handle, overlay, x, y) {
+    const win = handle.win;
+    const children = [...overlay.children];
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      const style = win.getComputedStyle(child);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (style.pointerEvents === 'none') continue;
+      const rect = child.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return { element: child, className: child.className, zIndex: style.zIndex, position: style.position };
+      }
+    }
+    return null;
+  }
+
+  /** Dispatch a click at the window point the way a browser does: to the hit-tested element. */
+  function pointerClick(handle, overlay, x, y) {
+    const hit = hitTest(handle, overlay, x, y);
+    if (!hit) return null;
+    hit.element.dispatchEvent(new handle.win.MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    return hit;
+  }
+
+  test('E: a control press keeps the overlay bar in front and the diagram mounted', async () => {
     const { handle, container, teardown } = await boot();
     try {
       const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
@@ -375,22 +402,21 @@ if (!clientAvailable) {
       await flushAsync(2);
       const overlay = handle.doc.querySelector('.dsh-pm-viewer');
       assert.ok(overlay, 'the overlay must open');
-      const geometry = layOutOverlay(handle.doc, overlay);
-      assert.equal(geometry.bar.offsetTop, 0, 'precondition: the bar starts at the top of the window');
-
+      giveViewerLayout(handle, overlay);
+      const stage = overlay.querySelector('.dsh-pm-stage');
       for (const name of ['Zoom in', 'Zoom out', 'Fit to window', 'Reset zoom to 100%']) {
         const control = overlayButton(overlay, name);
         assert.ok(control, 'the viewer must offer a ' + name + ' control');
+        // The bar is the first child and the backdrop is appended last, but the bar is
+        // position: relative, so it still paints (and hit-tests) above the backdrop.
+        const barHit = hitTest(handle, overlay, 640, 24);
+        assert.ok(barHit && barHit.element.classList.contains('dsh-pm-viewer-bar'),
+          name + ' blocker: the point over the bar hits ' + JSON.stringify(barHit));
         click(handle, control);
         await flushAsync(2);
-        const now = layOutOverlay(handle.doc, overlay);
-        assert.ok(overlay.contains(now.bar), name + ' must keep the bar inside the overlay');
-        assert.equal(now.bar.offsetTop, 0,
-          name + ' moved the bar away from the pointer (the overlay content was emptied)');
-        assert.ok(now.stage && now.stage.firstChild,
-          name + ' must leave the diagram mounted in the stage');
-        assert.ok(now.stage && now.stage.style.transform,
-          name + ' must leave the zoom transform applied');
+        assert.ok(overlay.querySelector('.dsh-pm-stage') === stage, name + ' must not replace the stage');
+        assert.ok(stage.firstChild, name + ' must leave the diagram mounted');
+        assert.ok(stage.style.transform, name + ' must leave the zoom transform applied');
       }
     } finally { teardown(); }
   });
@@ -418,7 +444,7 @@ if (!clientAvailable) {
       click(handle, trigger);
       await flushAsync(2);
       const overlay = handle.doc.querySelector('.dsh-pm-viewer');
-      layOutOverlay(handle.doc, overlay);
+      giveViewerLayout(handle, overlay);
       for (const name of ['Zoom in', 'Zoom out', 'Fit to window', 'Reset zoom to 100%']) {
         click(handle, overlayButton(overlay, name));
         await flushAsync(2);
@@ -426,5 +452,40 @@ if (!clientAvailable) {
       assert.deepEqual(scrolled, [], 'the viewer must not scroll the document, scrolled: ' + JSON.stringify(scrolled));
     } finally { teardown(); }
   });
-}
 
+  /**
+   * The drag path, end to end, with a real pointer sequence: a press inside the viewport, a
+   * move, and a release. The stage must follow the pointer by the same distance, and the
+   * overlay must stay open (a drag is not a click on the backdrop).
+   */
+  test('E: dragging inside the viewport pans the diagram', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
+      click(handle, trigger);
+      await flushAsync(2);
+      const overlay = handle.doc.querySelector('.dsh-pm-viewer');
+      const { viewport } = giveViewerLayout(handle, overlay);
+      const stage = overlay.querySelector('.dsh-pm-stage');
+      const translate = () => {
+        const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(stage.style.transform || '');
+        return match ? { x: Number(match[1]), y: Number(match[2]) } : { x: 0, y: 0 };
+      };
+      const before = translate();
+      const hit = hitTest(handle, overlay, 640, 400);
+      assert.ok(hit && hit.element.classList.contains('dsh-pm-viewport'),
+        'the point inside the viewport must hit the viewport, got ' + JSON.stringify(hit));
+      viewport.dispatchEvent(new handle.win.PointerEvent('pointerdown',
+        { bubbles: true, cancelable: true, pointerId: 1, button: 0, buttons: 1, clientX: 640, clientY: 400 }));
+      handle.doc.dispatchEvent(new handle.win.PointerEvent('pointermove',
+        { bubbles: true, cancelable: true, pointerId: 1, buttons: 1, clientX: 700, clientY: 430 }));
+      handle.doc.dispatchEvent(new handle.win.PointerEvent('pointerup',
+        { bubbles: true, cancelable: true, pointerId: 1, button: 0, buttons: 0, clientX: 700, clientY: 430 }));
+      await flushAsync(2);
+      const after = translate();
+      assert.equal(after.x - before.x, 60, 'the drag must pan the diagram horizontally');
+      assert.equal(after.y - before.y, 30, 'the drag must pan the diagram vertically');
+      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a drag must not close the overlay');
+    } finally { teardown(); }
+  });
+}

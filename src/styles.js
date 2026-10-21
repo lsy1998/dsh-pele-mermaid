@@ -63,7 +63,7 @@ body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias
    5 glyph buttons + a title + gap need ~470px, and a 700-900px window still has to
    leave room for the label + padding. flex-wrap + min-width:0 on the title keeps the
    actions on the first line whenever there is space and never hides them. */
-.dsh-pm-viewer-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.98))}
+.dsh-pm-viewer-bar{position:relative;z-index:2;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.98))}
 .dsh-pm-viewer-bar .dsh-pm-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 .dsh-pm-viewer-bar .dsh-pm-actions .dsh-pm-btn{flex:0 0 auto}
 /* A text label is unmistakable next to four bare glyph buttons; it only needs the
@@ -73,7 +73,7 @@ body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias
 @media (max-width:639px){.dsh-pm-viewer-exit-label{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}}
 /* The backdrop is the part of the overlay that is NOT the diagram viewport, so a
    click anywhere around the diagram closes the viewer. */
-.dsh-pm-viewer-backdrop{position:fixed;inset:0;z-index:2147482999;background:transparent;border:0;padding:0;cursor:default}
+.dsh-pm-viewer-backdrop{position:fixed;inset:0;z-index:1;background:transparent;border:0;padding:0;cursor:default}
 body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
 .dsh-pm-viewer-title{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#555);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.35))}

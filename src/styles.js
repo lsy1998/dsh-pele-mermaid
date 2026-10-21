@@ -33,17 +33,36 @@ export const CSS = `
 .dsh-pm-btn:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:2px}
 .dsh-pm-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
 .dsh-pm-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+/* The icon is a stroked SVG that inherits the button's colour, so it follows the theme in
+   both light and dark mode without a second set of assets. */
+.dsh-pm-icon{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .dsh-pm-body{padding:0}
 .dsh-pm-pane{display:block;padding:10px 12px;overflow:auto;cursor:grab;touch-action:pan-x pan-y}
 .dsh-pm-pane[data-dragging='true']{cursor:grabbing}
 .dsh-pm-pane:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:-2px}
 .dsh-pm-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
-/* Zoomed: the pane is a plain scroll container. The auto centring margin and
-   the max-width clamp would offset/scale the rendered box away from where the zoom
-   maths puts it (the transform origin is 0 0), so both are switched off as soon as
-   the user zooms. The JS also sets an explicit inline size, which would win anyway. */
-.dsh-pm-pane[data-zoom]:not([data-zoom='100']) svg{margin:0;max-width:none;height:auto}
-/* A zoomed diagram is scrollable rather than stretching the page. */
+/* The stage is the element the inline zoom sizes (see inlineStage in client.js). Pele
+   rewrites the whole style attribute of the svg it mounted whenever the pane resizes,
+   which wiped a zoom written onto the svg itself; the stage is ours, so sizing it
+   survives. The svg is then laid out by the stage through this rule.
+   The class is NOT "dsh-pm-stage": that one belongs to the fullscreen viewer and is
+   absolutely positioned, so sharing the name pulled the inline stage out of the flow
+   and the diagram floated over the page instead of scrolling inside the pane. */
+.dsh-pm-inline-stage{display:block;margin:0 auto;transform-origin:0 0}
+.dsh-pm-inline-stage>svg{display:block;max-width:none;width:100%;height:100%;margin:0}
+/* The stage keeps its auto centring margin on the inline axis at EVERY scale, including 100%.
+   An auto margin is not a fixed offset: for a block wider than its container the auto margins
+   resolve to 0 (left aligned, reachable by scrolling), and for a narrower one they centre it.
+   That is exactly the origin the zoom maths reads back in inlineStageOrigin(), so the centring
+   must NOT be switched off when the zoom leaves 100% - doing so left-aligned a shrunken diagram
+   and made every zoom step creep towards the top-left corner.
+   The block axis has no auto margin to resolve (it would compute to 0), so applyInlineZoom
+   writes an explicit margin-top there for the same reason.
+   The JS sizes the stage explicitly, which wins over the stylesheet anyway. */
+/* A zoomed diagram is scrollable rather than stretching the page. The pane's height is frozen
+   at its unzoomed size by the JS (see applyInlineZoom): a content-driven pane grows with the
+   diagram and never has a vertical scroll range, which leaves the zoom no way to hold its
+   anchor on that axis. */
 .dsh-pm-pane[data-zoom]:not([data-zoom='100']){overscroll-behavior:contain}
 .dsh-pm-pane[data-state='loading']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:12px 14px;white-space:pre-wrap}
 .dsh-pm-pane[data-state='error']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:12px 14px;white-space:pre-wrap}
@@ -56,32 +75,44 @@ export const CSS = `
 .dsh-pm[data-view='diagram'] .dsh-pm-code{display:none}
 .dsh-pm[data-view='code'][data-state='error'] .dsh-pm-error{display:block}
 .dsh-pm:not([data-state='ready']) .dsh-pm-action{display:none}
-.dsh-pm-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;isolation:isolate;background:#fff;color:var(--dsw-alias-label-primary,#222)}
+.dsh-pm-viewer{position:fixed;z-index:2147483000;inset:0;display:block;isolation:isolate;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-pm-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-pm-viewer[hidden]{display:none}
-/* The bar wraps instead of pushing the close control off-screen: with a 12px font,
-   5 glyph buttons + a title + gap need ~470px, and a 700-900px window still has to
-   leave room for the label + padding. flex-wrap + min-width:0 on the title keeps the
-   actions on the first line whenever there is space and never hides them. */
-.dsh-pm-viewer-bar{position:relative;z-index:2;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.98))}
-.dsh-pm-viewer-bar .dsh-pm-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
-.dsh-pm-viewer-bar .dsh-pm-actions .dsh-pm-btn{flex:0 0 auto}
-/* A text label is unmistakable next to four bare glyph buttons; it only needs the
-   room when the bar is narrow, so it is hidden from the layout (not from AT) below
-   640px, where the ✕ glyph plus the aria-label/title carry the meaning. */
-.dsh-pm-viewer-exit-label{white-space:nowrap}
-@media (max-width:639px){.dsh-pm-viewer-exit-label{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}}
-/* The backdrop is the part of the overlay that is NOT the diagram viewport, so a
-   click anywhere around the diagram closes the viewer. */
-.dsh-pm-viewer-backdrop{position:fixed;inset:0;z-index:1;background:transparent;border:0;padding:0;cursor:default}
-body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
-.dsh-pm-viewer-diag{position:absolute;right:12px;top:56px;z-index:5;max-width:min(640px,calc(100vw - 24px));margin:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.35));border-radius:6px;background:var(--dsw-alias-bg-layer-1,rgba(20,20,20,.96));color:var(--dsw-alias-label-primary,#eee);font:11px/16px var(--ds-font-family-code,ui-monospace,monospace);white-space:pre-wrap;overflow:hidden;pointer-events:none}
-.dsh-pm-viewer-build{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);opacity:.85;cursor:default;user-select:text}
+/* The scrim is inert: it never closes the overlay and it never takes a press. It used to be
+   position:fixed with z-index:1 while the viewport had z-index:auto, so it painted ON TOP of
+   the diagram and swallowed every click and every drag. pointer-events:none is the belt to
+   that braces: a decorative full-window layer can no longer intercept anything. */
+.dsh-pm-viewer-backdrop{position:absolute;inset:0;z-index:0;background:transparent;border:0;padding:0;pointer-events:none;cursor:default}
+/* The controls float in the bottom-right corner instead of sitting in a bar across the top,
+   so the diagram gets the whole window and nothing is under the pointer at the top edge. */
+.dsh-pm-viewer-bar{position:absolute;right:16px;bottom:16px;z-index:3;display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));border-radius:12px;background:var(--dsw-alias-bg-layer-1,rgba(255,255,255,.96));box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.dsh-pm-viewer-bar .dsh-pm-actions{flex-direction:column;align-items:stretch;gap:6px}
+/* Icon-only buttons: a fixed square keeps the column of controls even, and the icon
+   centres itself inside it. */
+.dsh-pm-viewer-bar .dsh-pm-actions .dsh-pm-btn{flex:0 0 auto;width:40px;min-width:40px;height:40px;min-height:40px;padding:0;display:flex;align-items:center;justify-content:center}
+.dsh-pm-viewer-bar > .dsh-pm-btn{align-self:stretch;width:40px;min-width:40px;height:40px;min-height:40px;padding:0;display:flex;align-items:center;justify-content:center}
+/* The separator divides the view controls from the exit, so the exit is its own group. */
+.dsh-pm-viewer-sep{height:1px;margin:2px 0;background:var(--dsw-alias-border-l1,rgba(127,127,127,.3))}
+body[data-ds-dark-theme] .dsh-pm-viewer-bar{background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.96))}
+.dsh-pm-viewer-diag{position:absolute;left:16px;top:46px;z-index:5;max-width:min(640px,calc(100vw - 32px));margin:0;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.35));border-radius:6px;background:var(--dsw-alias-bg-layer-1,rgba(20,20,20,.96));color:var(--dsw-alias-label-primary,#eee);font:11px/16px var(--ds-font-family-code,ui-monospace,monospace);white-space:pre-wrap;overflow:hidden;pointer-events:none}
+.dsh-pm-viewer-build{position:absolute;left:16px;bottom:16px;z-index:2;max-width:min(340px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);opacity:.85;cursor:default;user-select:text}
 @media (max-width:759px){.dsh-pm-viewer-build{display:none}}
-.dsh-pm-viewer-title{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A quiet caption in the top-left corner: pointer-events:none so it labels the diagram
+   without ever stealing a press that should pan. */
+.dsh-pm-viewer-title{position:absolute;left:16px;top:14px;z-index:2;max-width:min(60vw,420px);font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;user-select:none}
 .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#555);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.35))}
 body[data-ds-dark-theme] .dsh-pm-viewer .dsh-pm-btn{color:var(--dsw-alias-label-secondary,#ddd)}
-.dsh-pm-viewport{position:relative;flex:1;min-height:0;overflow:hidden;cursor:grab;touch-action:none}
+/* The exit control is the one destructive action in the group, so it reads as such: the
+   cross is drawn in the error colour while the view controls stay neutral. These rules
+   come AFTER the generic .dsh-pm-viewer .dsh-pm-btn colour, otherwise the generic one
+   (higher specificity) would win and the cross would stay grey. */
+.dsh-pm-viewer-bar>.dsh-pm-viewer-exit{color:var(--dsw-alias-state-error-primary,#e03131);border-color:var(--dsw-alias-state-error-primary,rgba(224,49,49,.45))}
+.dsh-pm-viewer-bar>.dsh-pm-viewer-exit:hover{background:var(--dsw-alias-state-error-container,rgba(224,49,49,.12));border-color:var(--dsw-alias-state-error-primary,#e03131)}
+body[data-ds-dark-theme] .dsh-pm-viewer-bar>.dsh-pm-viewer-exit{color:var(--dsw-alias-state-error-primary,#ff8787);border-color:var(--dsw-alias-state-error-primary,rgba(255,135,135,.45))}
+/* The viewport owns the whole window (the controls float above it), so a press anywhere that
+   is not a control is a pan. touch-action:none keeps a touch drag from turning into a
+   scroll, and user-select:none stops a pan from selecting the diagram's text. */
+.dsh-pm-viewport{position:absolute;inset:0;z-index:1;overflow:hidden;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .dsh-pm-viewport[data-dragging='true']{cursor:grabbing}
 .dsh-pm-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .dsh-pm-stage svg{display:block;max-width:none;height:auto;background:transparent}

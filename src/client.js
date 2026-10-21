@@ -410,6 +410,9 @@ function enhanceInfo(info) {
     inlineRestore: null,
     zoomNatural: { width: 0, height: 0 },
     zoomFit: 1,
+    // The pane's height, frozen at the unzoomed size (see applyInlineZoom). 0 = not captured
+    // yet, which is the normal state right up to the first render.
+    zoomBaseHeight: 0,
     zoomStatus,
     drag: null,
   };
@@ -419,13 +422,10 @@ function enhanceInfo(info) {
   const onCode = () => setView(entry, 'code');
   const onFullscreen = () => openViewer(entry);
   const onDownload = () => downloadEntry(entry);
-  // The zoom buttons anchor on the centre of the pane, exactly like the +/- keys do, so a
-  // click and a keypress produce the same result.
-  const paneCentre = () => {
-    const width = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
-    const height = entry.pane && entry.pane.clientHeight ? entry.pane.clientHeight : 0;
-    return { x: width / 2, y: height / 2 };
-  };
+  // The zoom buttons anchor on the centre of the area currently VISIBLE in the pane, so a
+  // click zooms out of the middle of what the user is looking at rather than out of the
+  // diagram's top-left corner. A click and the +/- keys therefore produce the same result.
+  const paneCentre = () => inlineVisibleCentre(entry);
   const onZoomIn = () => {
     const point = paneCentre();
     if (!zoomInlineAt(entry, ZOOM_STEP, point.x, point.y)) {
@@ -518,7 +518,7 @@ function inlineNatural(entry) {
     const height = declared.height > 0 ? declared.height : pristine.height;
     if (width > 0 && height > 0) return { width, height };
   }
-  const svg = entry.pane && entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
+  const svg = inlineSvg(entry);
   if (!svg) return entry.zoomNatural;
   const size = measureSvg(svg);
   if (size.width > 0 && size.height > 0) return size;
@@ -526,15 +526,50 @@ function inlineNatural(entry) {
 }
 
 /**
+ * The <svg> Pele mounted in the pane.
+ *
+ * The pane holds a STAGE element that wraps the diagram, and the zoom is applied to the stage
+ * rather than to the svg itself (see inlineStage).
+ */
+function inlineSvg(entry) {
+  if (!entry || !entry.pane || !entry.pane.querySelector) return null;
+  return entry.pane.querySelector('svg');
+}
+
+/**
+ * The element the inline zoom is applied to.
+ *
+ * WHY A WRAPPER: Pele installs a ResizeObserver on the pane and, whenever the pane resizes,
+ * rewrites the WHOLE style attribute of the svg it mounted. The zoom used to be written
+ * straight onto that svg (`style.width = '584px'`), so the observer - which fires precisely
+ * because the zoom changed the pane's content size - wiped the width again. The reported
+ * symptom was a zoom that changed `data-zoom` all the way down to 17% while the diagram
+ * stayed exactly the same size.
+ *
+ * The stage is a plain div we own, so its size survives: the observer still fires and Pele
+ * still restyles its svg, but the svg is then laid out by the stage through CSS
+ * (`.dsh-pm-inline-stage > svg { width:100%; height:100% }`), which Pele's rewrite cannot undo.
+ *
+ * The class name is deliberately NOT `.dsh-pm-stage`: that one is the fullscreen viewer's
+ * stage and is absolutely positioned. Sharing the name put the inline stage out of the
+ * document flow, so the diagram floated over the page instead of scrolling inside the pane.
+ */
+function inlineStage(entry) {
+  if (!entry || !entry.pane || !entry.pane.querySelector) return null;
+  return entry.pane.querySelector('.dsh-pm-inline-stage');
+}
+
+/**
  * The scale that fits the diagram into the pane width.
+ *
  * The stylesheet's `max-width:100%` used to do this implicitly; the zoom
  * state now multiplies it, so the unzoomed diagram still looks exactly as it
  * did before.
  */
 function inlineFitScale(entry) {
   const natural = inlineNatural(entry);
-  const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
-  if (clientWidth > 0 && natural.width > 0) return Math.min(1, clientWidth / natural.width);
+  const geom = inlineGeometry(entry);
+  if (geom.contentW > 0 && natural.width > 0) return Math.min(1, geom.contentW / natural.width);
   return entry.zoomFit > 0 ? entry.zoomFit : 1;
 }
 
@@ -544,67 +579,169 @@ function inlineScale(entry) {
 }
 
 /**
- * The layout of the diagram inside the scroll container for a given effective
- * scale: the displayed size and the scrollable extent.
+ * The pane's geometry: its padding and the size of its content box.
+ *
+ * The zoom maths works in the CONTENT box's screen coordinates, so the padding matters:
+ * the scroll offsets are measured from the content box, while the visible band is the
+ * client box (which INCLUDES the padding).
  */
-function inlineLayout(entry, effectiveScale) {
-  const natural = inlineNatural(entry);
-  const width = natural.width * effectiveScale;
-  const height = natural.height * effectiveScale;
-  const clientWidth = entry.pane && entry.pane.clientWidth ? entry.pane.clientWidth : 0;
-  const clientHeight = entry.pane && entry.pane.clientHeight ? entry.pane.clientHeight : 0;
+function inlineGeometry(entry) {
+  const pane = entry && entry.pane;
+  const empty = { padL: 0, padR: 0, padT: 0, padB: 0, clientW: 0, clientH: 0, contentW: 0, contentH: 0 };
+  if (!pane) return empty;
+  const view = pane.ownerDocument && pane.ownerDocument.defaultView;
+  let padL = 0, padR = 0, padT = 0, padB = 0;
+  if (view && typeof view.getComputedStyle === 'function') {
+    const cs = view.getComputedStyle(pane);
+    padL = parseFloat(cs.paddingLeft) || 0;
+    padR = parseFloat(cs.paddingRight) || 0;
+    padT = parseFloat(cs.paddingTop) || 0;
+    padB = parseFloat(cs.paddingBottom) || 0;
+  }
+  const clientW = pane.clientWidth || 0;
+  const clientH = pane.clientHeight || 0;
   return {
-    natural,
-    width,
-    height,
-    scrollWidth: Math.max(width, clientWidth),
-    scrollHeight: Math.max(height, clientHeight),
+    padL, padR, padT, padB, clientW, clientH,
+    contentW: Math.max(0, clientW - padL - padR),
+    contentH: Math.max(0, clientH - padT - padB),
   };
 }
 
 /**
- * Write the current zoom state onto the rendered SVG and the accessibility tree.
- * The effective scale becomes the SVG's layout size (so the pane can scroll to
- * the enlarged content); the pan itself is a scroll offset, never a transform.
+ * The stage's top-left offset inside the pane's content box, on BOTH axes.
+ *
+ * Horizontal: the stage is centred by `margin: 0 auto`, which for an over-constrained block
+ * (one wider than its container) resolves to 0. That is exactly `Math.max(0, (contentW - w) / 2)`,
+ * and it is also what keeps a zoomed-in diagram's left edge reachable by scrolling - a real
+ * auto margin would push it out of the scrollable area for good.
+ *
+ * Vertical: `margin: auto` resolves to 0 on the block axis (there is no free space to
+ * distribute before the block's over-constrained margin rule kicks in), so the centring is
+ * written explicitly by applyInlineZoom as a margin-top in the same
+ * `Math.max(0, (contentH - h) / 2)` form. Without it a diagram shrunk below the pane's frozen
+ * height would sit against the top edge, off-centre from where it started.
+ *
+ * This is not a guess about the layout, it IS the layout: the zoom maths has to agree with
+ * the box the browser actually produced, or the anchored point drifts on every step. Deriving
+ * the vertical origin from `contentW` (a single-axis helper reused for both axes) is what used
+ * to tilt the diagram towards the top-left corner on every zoom step.
+ */
+function inlineStageOrigin(stageWidth, stageHeight, geom) {
+  const g = geom || { contentW: 0, contentH: 0 };
+  return {
+    x: Math.max(0, (g.contentW - (Number(stageWidth) || 0)) / 2),
+    y: Math.max(0, (g.contentH - (Number(stageHeight) || 0)) / 2),
+  };
+}
+
+/**
+ * The centre of the area the user can currently SEE, in content-box screen coordinates -
+ * the same space inlinePointInPane() returns, which is what zoomInlineAt() anchors in.
+ *
+ * `clientW / 2 - padL`, and deliberately NOT `scrollLeft + ...`: this is a SCREEN position
+ * measured from the content box's left edge, and zoomInlineAt() adds the scroll offset itself
+ * when it converts it into a content offset. Adding it here too would count the scroll twice
+ * and make every zoom step creep towards the right-hand edge.
+ *
+ * The padding is subtracted because the client box includes it while the content box - the
+ * space the scroll offsets are measured in - does not.
+ *
+ * The zoom buttons and the +/- keys anchor here, which is what makes a zoom grow out of the
+ * middle of what is on screen instead of out of the diagram's origin.
+ */
+function inlineVisibleCentre(entry) {
+  const geom = inlineGeometry(entry);
+  return { x: geom.clientW / 2 - geom.padL, y: geom.clientH / 2 - geom.padT };
+}
+
+/**
+ * A viewport point (clientX/clientY) expressed in the pane's content-box screen coordinates -
+ * the same space zoomInlineAt() anchors in.
+ *
+ * The pane's padding is subtracted because the scroll offsets are measured from the content
+ * box while clientX/clientY are measured from the viewport.
+ */
+function inlinePointInPane(entry, clientX, clientY) {
+  const pane = entry && entry.pane;
+  const geom = inlineGeometry(entry);
+  const centre = inlineVisibleCentre(entry);
+  const cx = Number(clientX);
+  const cy = Number(clientY);
+  if (!pane || typeof pane.getBoundingClientRect !== 'function' || !Number.isFinite(cx) || !Number.isFinite(cy)) {
+    return centre;
+  }
+  const rect = pane.getBoundingClientRect();
+  if (!rect) return centre;
+  return { x: cx - rect.left - geom.padL, y: cy - rect.top - geom.padT };
+}
+
+/**
+ * Write the current zoom state onto the rendered diagram and the accessibility tree.
+ *
+ * The effective scale becomes the STAGE's layout size (see inlineStage for why the stage and
+ * not the svg), so the pane can scroll to the enlarged content; the pan itself is a scroll
+ * offset, never a transform.
+ *
+ * The stage is ALWAYS sized explicitly - even at 100% - because the stylesheet's
+ * `max-width:100%` would otherwise shrink the diagram to the column width without telling
+ * the zoom maths about it, and the two would disagree about where the content sits.
  */
 function applyInlineZoom(entry) {
   if (!entry || !entry.pane) return;
-  const svg = entry.pane.querySelector ? entry.pane.querySelector('svg') : null;
-  if (!svg) return;
+  const stage = inlineStage(entry);
+  const svg = inlineSvg(entry);
+  if (!stage || !svg) return;
   const natural = inlineNatural(entry);
   entry.zoomNatural = natural;
   entry.zoomFit = inlineFitScale(entry);
   const zoom = entry.zoom;
   const effective = inlineScale(entry);
-  if (effective === 1 && zoom.tx === 0 && zoom.ty === 0) {
-    // At the natural size the stylesheet stays in charge, exactly as before.
-    svg.style.width = '';
-    svg.style.height = '';
-    svg.style.maxWidth = '';
-    svg.style.minWidth = '';
-    svg.style.transform = '';
-    svg.style.transformOrigin = '';
-    // The pane only gets a bounded height once the diagram is enlarged, so an
-    // unzoomed block still grows with its diagram as it always did.
-    entry.pane.style.maxHeight = '';
+  const stageWidth = natural.width * effective;
+  const stageHeight = natural.height * effective;
+  // The stage carries the SCALED size, and the svg fills it (see the stylesheet). The
+  // diagram is therefore always exactly natural * effective pixels wide.
+  stage.style.width = round(stageWidth, 2) + 'px';
+  stage.style.height = round(stageHeight, 2) + 'px';
+  // Vertically centre the stage inside the pane's content box, so a diagram smaller than the
+  // pane's frozen height stays in the middle instead of climbing to the top edge. Written as
+  // a margin rather than left to `margin: auto`, which resolves to 0 on the block axis; the
+  // value is the same one zoomInlineAt() reads back as the vertical origin.
+  const origin = inlineStageOrigin(stageWidth, stageHeight, inlineGeometry(entry));
+  stage.style.marginTop = round(origin.y, 2) + 'px';
+  // The pan is normally a scroll offset. When the pane cannot scroll (not laid out yet, or
+  // the diagram is smaller than the pane) the drag falls back to a translate, which is
+  // applied here and dropped by the next scroll-capable gesture.
+  if (zoom.tx || zoom.ty) {
+    stage.style.transform = 'translate(' + round(zoom.tx) + 'px, ' + round(zoom.ty) + 'px)';
+    stage.style.transformOrigin = '0 0';
   } else {
-    svg.style.width = round(natural.width * effective, 2) + 'px';
-    svg.style.height = round(natural.height * effective, 2) + 'px';
-    svg.style.maxWidth = 'none';
-    svg.style.minWidth = '0';
-    // The pan is normally a scroll offset. When the pane cannot scroll (not laid out yet, or
-    // the diagram is smaller than the pane) the drag falls back to a translate, which is
-    // applied here and dropped by the next scroll-capable gesture.
-    if (zoom.tx || zoom.ty) {
-      svg.style.transform = 'translate(' + round(zoom.tx) + 'px, ' + round(zoom.ty) + 'px)';
-      svg.style.transformOrigin = '0 0';
-    } else {
-      svg.style.transform = '';
-      svg.style.transformOrigin = '';
-    }
-    // A bounded pane makes the enlarged diagram scrollable instead of pushing
-    // the rest of the message out of the view.
-    if (!entry.pane.style.maxHeight) entry.pane.style.maxHeight = '70vh';
+    stage.style.transform = '';
+    stage.style.transformOrigin = '';
+  }
+  // A bounded pane makes the enlarged diagram scrollable instead of pushing
+  // the rest of the message out of the view.
+  if (!entry.pane.style.maxHeight) entry.pane.style.maxHeight = '70vh';
+  // Freeze the pane's height at the unzoomed size.
+  //
+  // WHY: the pane is a scroll container, and the zoom anchoring works by moving its scroll
+  // offsets. But a pane whose height is CONTENT-driven grows as the diagram grows, so it
+  // never becomes taller than its content and the vertical scroll range stays 0 - there is
+  // simply nothing to scroll, and the anchor cannot be held on that axis at all. Zooming in
+  // then looked like the diagram was growing out of its top-left corner, which is exactly
+  // what "zoom around the visible centre" is supposed to prevent.
+  //
+  // Pinning the height makes the visible band a FIXED region: the diagram is centred inside
+  // it when smaller and scrolls inside it when larger, so "the centre of what is visible"
+  // is a stable point on both axes.
+  //
+  // The height is captured once, on the first pass at 100%, so the pane looks exactly as
+  // tall as the diagram did before any zooming. `box-sizing:border-box` (set on .dsh-pm *)
+  // in the stylesheet) keeps the padding inside this height, so clientHeight stays stable too.
+  if (entry.zoomBaseHeight > 0) {
+    entry.pane.style.height = entry.zoomBaseHeight + 'px';
+  } else if (zoom.scale === 1 && entry.pane.clientHeight > 0) {
+    entry.zoomBaseHeight = entry.pane.clientHeight;
+    entry.pane.style.height = entry.zoomBaseHeight + 'px';
   }
   if (entry.pane.dataset) {
     entry.pane.dataset.zoom = String(Math.round(zoom.scale * 100));
@@ -623,40 +760,63 @@ function updateZoomStatus(entry) {
 }
 
 /**
- * Zoom the inline diagram around the pane point (px, py): the content point
- * under the pointer stays under the pointer.
+ * Zoom the inline diagram around the pane point (px, py), expressed in the pane's
+ * content-box screen coordinates (see inlinePointInPane / inlineVisibleCentre).
+ * The content point under that point stays under that point.
  *
- * The scale becomes the SVG layout size, so the anchored point is held by moving the
- * pane's scroll offsets - clamped, so a pointer near the origin can never ask for a
- * negative scroll (a browser would silently clamp that to 0 and the anchor would break).
+ * The scale becomes the STAGE's layout size, so the pan is the pane's scroll offset and the
+ * anchored point is held by writing a new offset:
+ *
+ *   u           = (scrollLeft + px - originBefore) / effectiveBefore   // natural units
+ *   scrollLeft' =  originAfter + u * effectiveAfter - px
+ *
+ * `origin` is the stage's centring offset inside the content box, and it CHANGES with the
+ * scale (a diagram narrower than the column is centred, a wider one is left aligned). Using
+ * one origin for both sides - which is what mixing `fit` and the user scale did - made the
+ * diagram creep towards the top-left on every step.
+ *
+ * The offsets go through writeScroll, so they are clamped to what the pane can actually
+ * scroll to: a pointer near the origin can never ask for a negative scroll, and a browser
+ * would clamp that to 0 anyway and silently break the anchor.
+ *
+ * Returns false when the scale is already at the limit the factor asks for.
  */
 function zoomInlineAt(entry, factor, px, py) {
-  if (!entry || !entry.zoom) return false;
+  if (!entry || !entry.zoom || !entry.pane) return false;
   const zoom = entry.zoom;
+  const ratio = Number(factor);
+  if (!Number.isFinite(ratio) || ratio <= 0) return false;
   const previous = zoom.scale;
-  const next = clamp(previous * factor, MIN_SCALE, MAX_SCALE);
+  const next = clamp(previous * ratio, MIN_SCALE, MAX_SCALE);
   if (next === previous) return false;
+
+  const geom = inlineGeometry(entry);
+  const natural = inlineNatural(entry);
   const fit = inlineFitScale(entry);
-  const x = Number.isFinite(px) ? px : 0;
-  const y = Number.isFinite(py) ? py : 0;
-  // The anchored content point is held by the scroll offsets, so any translate left over
-  // from an unscrollable drag is retired here: keeping both would double-count the pan.
+  const x = Number.isFinite(px) ? px : geom.clientW / 2;
+  const y = Number.isFinite(py) ? py : geom.clientH / 2;
+
+  // The anchored point is held by the scroll offsets, so any translate left over from a drag
+  // on an unscrollable pane is retired here: keeping both would double-count the pan.
   const offsetX = zoom.tx;
   const offsetY = zoom.ty;
   zoom.tx = 0;
   zoom.ty = 0;
-  const scrollLeft = readScroll(entry.pane, 'left') - offsetX;
-  const scrollTop = readScroll(entry.pane, 'top') - offsetY;
-  // The natural (unscaled) content coordinate under the pointer.
-  const contentX = (x + scrollLeft) / (previous * fit);
-  const contentY = (y + scrollTop) / (previous * fit);
+  const scrollLeft = Math.max(0, readScroll(entry.pane, 'left') - offsetX);
+  const scrollTop = Math.max(0, readScroll(entry.pane, 'top') - offsetY);
+
+  const originBefore = inlineStageOrigin(natural.width * fit * previous, natural.height * fit * previous, geom);
+  const originAfter = inlineStageOrigin(natural.width * fit * next, natural.height * fit * next, geom);
+
+  // The natural (unscaled) content coordinate under the anchor, which must not move.
+  const contentX = (scrollLeft + x - originBefore.x) / (fit * previous);
+  const contentY = (scrollTop + y - originBefore.y) / (fit * previous);
+
   zoom.setScale(next);
   applyInlineZoom(entry);
-  // Move the scroll offsets so the anchored point stays under the pointer. They are clamped,
-  // so a pointer near the origin can never ask for a negative scroll (a browser would clamp
-  // that to 0 and the anchor would silently break).
-  writeScroll(entry.pane, 'left', contentX * next * fit - x);
-  writeScroll(entry.pane, 'top', contentY * next * fit - y);
+
+  writeScroll(entry.pane, 'left', originAfter.x + contentX * fit * next - x);
+  writeScroll(entry.pane, 'top', originAfter.y + contentY * fit * next - y);
   if (entry.pane.dataset) {
     entry.pane.dataset.panX = String(Math.round(readScroll(entry.pane, 'left')));
     entry.pane.dataset.panY = String(Math.round(readScroll(entry.pane, 'top')));
@@ -697,19 +857,14 @@ function onPaneWheel(entry, event) {
   if (!event) return;
   if (!event.ctrlKey && !event.metaKey) return; // the page must keep scrolling
   if (typeof event.preventDefault === 'function') event.preventDefault();
-  let px = Number(event.clientX) || 0;
-  let py = Number(event.clientY) || 0;
-  if (entry.pane && typeof entry.pane.getBoundingClientRect === 'function') {
-    const rect = entry.pane.getBoundingClientRect();
-    if (rect) {
-      px -= rect.left;
-      py -= rect.top;
-    }
-  }
+  // The pointer anchor lives in the pane's content-box space, padding included (see
+  // inlinePointInPane). Deriving it from the raw clientX/clientY would offset the zoom by
+  // the pane's padding, which is exactly the drift the anchoring maths exists to prevent.
+  const point = inlinePointInPane(entry, event.clientX, event.clientY);
   const delta = typeof event.deltaY === 'number' ? event.deltaY : 0;
   let factor = Math.exp(-delta * 0.0015);
   if (!Number.isFinite(factor) || factor <= 0 || factor === 1) factor = ZOOM_STEP;
-  zoomInlineAt(entry, factor, px, py);
+  zoomInlineAt(entry, factor, point.x, point.y);
 }
 
 function onPanePointerDown(entry, event) {
@@ -778,21 +933,22 @@ function onPanePointerUp(entry) {
 function onPaneKeydown(entry, event) {
   if (!event) return;
   const key = event.key;
-  const pane = entry.pane;
-  const clientWidth = (pane && pane.clientWidth) || 0;
-  const clientHeight = (pane && pane.clientHeight) || 0;
   const stop = () => {
     if (typeof event.preventDefault === 'function') event.preventDefault();
     if (typeof event.stopPropagation === 'function') event.stopPropagation();
   };
+  // The +/- keys anchor on the centre of the visible area, exactly like the toolbar buttons
+  // (see inlineVisibleCentre).
   if (key === '+' || key === '=') {
     stop();
-    zoomInlineAt(entry, ZOOM_STEP, clientWidth / 2, clientHeight / 2);
+    const point = inlineVisibleCentre(entry);
+    zoomInlineAt(entry, ZOOM_STEP, point.x, point.y);
     return;
   }
   if (key === '-' || key === '_') {
     stop();
-    zoomInlineAt(entry, 1 / ZOOM_STEP, clientWidth / 2, clientHeight / 2);
+    const point = inlineVisibleCentre(entry);
+    zoomInlineAt(entry, 1 / ZOOM_STEP, point.x, point.y);
     return;
   }
   if (key === '0') {
@@ -862,8 +1018,13 @@ function finalizeRendered(entry, result, generation) {
     height: Number(result && result.height) > 0 ? Number(result.height) : 0,
   };
   // A fresh render replaces the diagram, so the per-block zoom/pan state starts
-  // over (the previous transform belonged to the old SVG). resetInlineZoom also
-  // re-measures the fit scale for the new SVG.
+  // over (the previous transform belonged to the old SVG). The stage is (re)built first:
+  // resetInlineZoom measures and sizes it, so it has to exist before the reset.
+  // The frozen pane height belongs to the OLD diagram too, so it is released here and
+  // re-captured from the new one (a different diagram may be a different size).
+  entry.zoomBaseHeight = 0;
+  if (entry.pane.style) entry.pane.style.height = '';
+  ensureInlineStage(entry);
   resetInlineZoom(entry);
   entry.wrapper.dataset.state = 'ready';
   entry.pane.dataset.state = 'ready';
@@ -876,6 +1037,32 @@ function finalizeRendered(entry, result, generation) {
     svg.setAttribute('aria-label', tr('diagramTitle', { type: entry.type || 'mermaid' }));
   }
   setStatus(entry, 'rendered');
+}
+
+/**
+ * Wrap the freshly mounted diagram in the stage the inline zoom is applied to.
+ *
+ * Pele installs a ResizeObserver on the pane and rewrites the whole style attribute of the
+ * svg it mounted whenever the pane resizes, so a zoom written onto that svg is wiped the
+ * moment it changes the pane's size. The stage is ours, so sizing it survives (see
+ * inlineStage). Wrapping happens after every render because renderEntry clears the pane.
+ */
+function ensureInlineStage(entry) {
+  const pane = entry && entry.pane;
+  if (!pane || !pane.querySelector) return null;
+  const svg = pane.querySelector('svg');
+  if (!svg) return null;
+  let stage = pane.querySelector('.dsh-pm-inline-stage');
+  if (stage && stage.contains(svg)) return stage;
+  const doc = svg.ownerDocument || state.doc;
+  if (!doc) return null;
+  stage = doc.createElement('div');
+  stage.className = 'dsh-pm-inline-stage';
+  // insertBefore(svg) keeps the diagram in the same document position it already had, so
+  // re-wrapping an already-wrapped stage cannot duplicate or drop it.
+  pane.insertBefore(stage, svg);
+  stage.appendChild(svg);
+  return stage;
 }
 
 function showRenderError(entry, error, generation) {

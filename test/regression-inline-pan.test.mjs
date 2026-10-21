@@ -80,19 +80,24 @@ if (!clientAvailable) {
   /**
    * A scroll container whose extent tracks what was written, like a browser's: the offset is
    * clamped to [0, scrollSize - clientSize] and scrollWidth/scrollHeight are derived from the
-   * svg's inline size. This is what makes the negative-scroll assertion meaningful.
+   * STAGE's inline size.
+   *
+   * The stage, not the svg: Pele rewrites the whole style attribute of the svg it mounted
+   * whenever the pane resizes, so the zoom is written onto the stage we own (see inlineStage
+   * in src/client.js). Reading the svg here would report 0 and every extent assertion below
+   * would be vacuous.
    */
   function makeScrollPane(pane) {
     let left = 0;
     let top = 0;
-    const svg = () => pane.querySelector('svg');
+    const stage = () => pane.querySelector('.dsh-pm-inline-stage') || pane.querySelector('svg');
     const extentX = () => {
-      const element = svg();
+      const element = stage();
       const width = element ? parseFloat(element.style.width) || 0 : 0;
       return Math.max(width, PANE_WIDTH);
     };
     const extentY = () => {
-      const element = svg();
+      const element = stage();
       const height = element ? parseFloat(element.style.height) || 0 : 0;
       return Math.max(height, PANE_HEIGHT);
     };

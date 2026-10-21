@@ -30,8 +30,55 @@ var FALLBACK_MESSAGES = {
 
 var INTERPOLATE_RE = /\{(\w+)\}/g;
 var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-/** Pointer movement that turns a press into a pan rather than a click. */
-var DRAG_SLOP = 3;
+
+/**
+ * Inline SVG for the viewer controls.
+ *
+ * The controls used to be typographic glyphs (✕, ⤡, 1:1). Those render differently on every
+ * platform and some of them (⤡, U+2921) are simply missing from common Windows fonts, so a
+ * control could end up as a blank box. Real SVG paths look the same everywhere, inherit the
+ * button's colour through `currentColor` and scale with the chrome.
+ *
+ * The markup is a compile-time constant - no user data ever reaches the DOM as markup.
+ */
+var ICON_PATHS = {
+  // Magnifier with a plus: zoom in.
+  zoomIn: '<circle cx="6.75" cy="6.75" r="4.25"></circle>' +
+    '<path d="M9.9 9.9 13.5 13.5"></path>' +
+    '<path d="M4.9 6.75h3.7M6.75 4.9v3.7"></path>',
+  // The same magnifier with a minus: zoom out.
+  zoomOut: '<circle cx="6.75" cy="6.75" r="4.25"></circle>' +
+    '<path d="M9.9 9.9 13.5 13.5"></path>' +
+    '<path d="M4.9 6.75h3.7"></path>',
+  // Four corner brackets: fit the diagram to the window.
+  fitWindow: '<path d="M2 6V3.5A1.5 1.5 0 0 1 3.5 2H6"></path>' +
+    '<path d="M10 2h2.5A1.5 1.5 0 0 1 14 3.5V6"></path>' +
+    '<path d="M14 10v2.5a1.5 1.5 0 0 1-1.5 1.5H10"></path>' +
+    '<path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5V10"></path>',
+  // A frame around a smaller frame: the diagram back at its natural 1:1 size.
+  resetZoom: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"></rect>' +
+    '<rect x="6" y="6" width="4" height="4" rx="0.5"></rect>',
+  // A cross: leave the fullscreen viewer.
+  close: '<path d="M4 4l8 8M12 4l-8 8"></path>',
+};
+
+/** Fallback glyphs, used only if the DOM cannot parse SVG (then the control is never blank). */
+var ICON_FALLBACK = {
+  zoomIn: '+',
+  zoomOut: '−',
+  fitWindow: '⤡',
+  resetZoom: '1:1',
+  close: '✕',
+};
+
+/**
+ * Wheel sensitivity.
+ *
+ * The wheel is normalized to "notches" (see wheelNotches) and one notch is worth
+ * ZOOM_NOTCH in log space, i.e. about 10% of zoom per notch - enough to feel responsive
+ * without overshooting on a fast scroll.
+ */
+var ZOOM_NOTCH = 0.095;
 
 export function createViewer(deps) {
   var options = deps || {};
@@ -67,11 +114,6 @@ export function createViewer(deps) {
   var buildEl = null;
   var backdrop = null;
   var drag = null;
-  // Set by a press that actually moved: the click that ends that press is a pan, not a click.
-  var dragMoved = false;
-  // Set when a press began on the diagram or the chrome: the click that ends it is not a
-  // click on the empty page and must not close the viewer.
-  var pressMarked = false;
   var currentType = 'diagram';
   var closeHandler = null;
   var listeners = [];
@@ -103,33 +145,51 @@ export function createViewer(deps) {
     return node;
   }
 
-  function button(key, glyph, handler) {
+  /**
+   * An icon-only control: an inline SVG plus the localized name in aria-label/title.
+   *
+   * The controls are icon-only by design - a row of five text buttons down the corner of the
+   * window is noisy, and the diagram deserves the space. The name still travels with the
+   * control: aria-label is the accessible name (R13) and title is the hover tooltip, so
+   * nothing is lost to a screen-reader user or to someone who just hovers.
+   */
+  function button(key, iconName, handler) {
     var node = el('button', 'dsh-pm-btn');
     node.type = 'button';
     node.setAttribute('data-i18n-key', key);
     node.setAttribute('aria-label', t(key));
     node.setAttribute('title', t(key));
-    node.textContent = glyph;
+    node.appendChild(icon(iconName));
     node.onclick = handler;
     return node;
   }
 
-  /**
-   * A TEXT button: the glyph plus a visible, localized label.
-   *
-   * The overlay used to offer a single ✕ glyph. It worked and was on top of everything,
-   * but it was indistinguishable from the four other glyph buttons (zoom out/in/fit/reset)
-   * and it carried no visible text, so users did not find it. The label makes the exit
-   * affordance unmistakable; below 640px the stylesheet hides the label visually (the aria-label
-   * and title still carry it) so the bar does not wrap.
-   */
-  function textButton(key, glyph, handler, labelKey) {
-    var node = button(key, glyph, handler);
-    var label = el('span', 'dsh-pm-viewer-exit-label');
-    label.setAttribute('data-i18n-key', key);
-    label.textContent = t(labelKey || key);
-    node.appendChild(label);
-    return node;
+  /** Build the inline SVG for an icon, or a text fallback if the DOM cannot make one. */
+  function icon(name) {
+    var markup = ICON_PATHS[name];
+    if (!markup) return doc.createTextNode(ICON_FALLBACK[name] || '');
+    var ns = 'http://www.w3.org/2000/svg';
+    var Parser = (win && win.DOMParser) || (typeof DOMParser !== 'undefined' ? DOMParser : null);
+    if (Parser) {
+      try {
+        var parsed = new Parser().parseFromString(
+          '<svg xmlns="' + ns + '" viewBox="0 0 16 16">' + markup + '</svg>', 'image/svg+xml');
+        var rootNode = parsed && parsed.documentElement;
+        var failed = parsed && typeof parsed.getElementsByTagName === 'function'
+          ? parsed.getElementsByTagName('parsererror')
+          : null;
+        if (rootNode && String(rootNode.nodeName).toLowerCase() === 'svg' && failed && !failed.length) {
+          var svg = doc.importNode(rootNode, true);
+          svg.setAttribute('width', '16');
+          svg.setAttribute('height', '16');
+          svg.setAttribute('aria-hidden', 'true');
+          svg.setAttribute('focusable', 'false');
+          svg.setAttribute('class', 'dsh-pm-icon');
+          return svg;
+        }
+      } catch (error) { /* fall through to the glyph */ }
+    }
+    return doc.createTextNode(ICON_FALLBACK[name] || '');
   }
 
   /** Re-apply every localized string; called on open() and on a language change. */
@@ -141,12 +201,16 @@ export function createViewer(deps) {
     if (viewport) viewport.setAttribute('aria-label', t('viewerTitle', { type: currentType }));
     if (liveEl) liveEl.setAttribute('aria-label', t('statusLabel'));
     if (bar) {
-      var nodes = bar.querySelectorAll ? bar.querySelectorAll('button') : [];
+      var nodes = bar.querySelectorAll ? bar.querySelectorAll('[data-i18n-key]') : [];
       for (var i = 0; i < nodes.length; i += 1) {
-        var key = nodes[i].getAttribute && nodes[i].getAttribute('data-i18n-key');
+        var key = nodes[i].getAttribute('data-i18n-key');
         if (!key) continue;
-        nodes[i].setAttribute('aria-label', t(key));
-        nodes[i].setAttribute('title', t(key));
+        var text = t(key);
+        // The controls are icon-only: the localized string lives in aria-label (the
+        // accessible name, R13) and in title (the hover tooltip). A language switch
+        // therefore has to refresh both, not just the visible text.
+        nodes[i].setAttribute('aria-label', text);
+        nodes[i].setAttribute('title', text);
       }
     }
   }
@@ -177,42 +241,54 @@ export function createViewer(deps) {
     root.setAttribute('aria-label', t('viewerLabel'));
     root.setAttribute('hidden', '');
 
-    // The click-to-close surface is the overlay's FIRST child, so every stage of the viewer
-    // (bar, viewport, live region) is appended after it and therefore paints above it. It used
-    // to be appended LAST, which put a full-window transparent surface on top of the toolbar
-    // and the diagram: every press on a control landed on it and closed the viewer.
+    // The scrim is inert. It used to carry the click-to-close behaviour, and because it is
+    // position:fixed over the whole window it also sat ABOVE the viewport in paint order
+    // (z-index:1 vs the viewport's auto), so every press landed on it: a click closed the
+    // overlay and a drag closed it too. Nothing in the overlay closes on a click any more -
+    // Escape and the exit control are the only ways out - and pointer-events:none makes it
+    // impossible for a decorative layer to swallow a press again.
     backdrop = el('div', 'dsh-pm-viewer-backdrop');
     backdrop.setAttribute('aria-hidden', 'true');
-    backdrop.onclick = function () { closeViewer(); };
     root.appendChild(backdrop);
 
-    bar = el('div', 'dsh-pm-viewer-bar');
-    titleEl = el('div', 'dsh-pm-viewer-title');
-    bar.appendChild(titleEl);
-
-    var actions = el('div', 'dsh-pm-actions');
-    actions.appendChild(button('zoomOut', '−', function () { zoomBy(1 / ZOOM_STEP); }));
-    actions.appendChild(button('zoomIn', '+', function () { zoomBy(ZOOM_STEP); }));
-    actions.appendChild(button('fitWindow', '⤡', function () { fitToWindow(); }));
-    actions.appendChild(button('resetZoom', '1:1', function () { resetToNatural(); }));
-    // The exit control is a TEXT button, not a bare glyph: it must be findable.
-    actions.appendChild(textButton('closeViewer', '✕', function () { closeViewer(); }, 'exitFullscreen'));
-    // The build stamp: which version of the plugin this page actually loaded. A stale
-    // bundle then answers "did my update take effect?" without opening a terminal.
-    buildEl = el('span', 'dsh-pm-viewer-build');
-    buildEl.setAttribute('data-build-stamp', BUILD_STAMP);
-    buildEl.setAttribute('title', 'dsh-pele-mermaid build: ' + BUILD_STAMP);
-    buildEl.textContent = BUILD_STAMP;
-    actions.appendChild(buildEl);
-    bar.appendChild(actions);
-    root.appendChild(bar);
-
+    // The viewport fills the WHOLE overlay: the controls float above it in a corner, so the
+    // diagram gets the entire window and every press that is not on a control is a pan.
     viewport = el('div', 'dsh-pm-viewport');
     viewport.setAttribute('tabindex', '0');
     viewport.setAttribute('aria-label', t('viewerLabel'));
     stage = el('div', 'dsh-pm-stage');
     viewport.appendChild(stage);
     root.appendChild(viewport);
+
+    // A quiet caption in the top-left corner: it labels the diagram without stealing a press.
+    titleEl = el('div', 'dsh-pm-viewer-title');
+    root.appendChild(titleEl);
+
+    // The controls float in the bottom-right corner, clear of the diagram and of the pointer,
+    // grouped by function: the view controls first, the exit below a separator. All of them
+    // are icon-only - the name is in the aria-label and in the hover tooltip.
+    bar = el('div', 'dsh-pm-viewer-bar');
+    var actions = el('div', 'dsh-pm-actions');
+    actions.appendChild(button('zoomIn', 'zoomIn', function () { zoomBy(ZOOM_STEP); }));
+    actions.appendChild(button('zoomOut', 'zoomOut', function () { zoomBy(1 / ZOOM_STEP); }));
+    actions.appendChild(button('fitWindow', 'fitWindow', function () { fitToWindow(); }));
+    actions.appendChild(button('resetZoom', 'resetZoom', function () { resetToNatural(); }));
+    bar.appendChild(actions);
+    bar.appendChild(el('div', 'dsh-pm-viewer-sep'));
+    // The exit control carries its own class so the stylesheet can single it out as the one
+    // destructive action in the group, whatever else the bar holds.
+    var exit = button('closeViewer', 'close', function () { closeViewer(); });
+    exit.className += ' dsh-pm-viewer-exit';
+    bar.appendChild(exit);
+    root.appendChild(bar);
+
+    // The build stamp: which version of the plugin this page actually loaded. A stale
+    // bundle then answers "did my update take effect?" without opening a terminal.
+    buildEl = el('span', 'dsh-pm-viewer-build');
+    buildEl.setAttribute('data-build-stamp', BUILD_STAMP);
+    buildEl.setAttribute('title', 'dsh-pele-mermaid build: ' + BUILD_STAMP);
+    buildEl.textContent = BUILD_STAMP;
+    root.appendChild(buildEl);
 
     liveEl = el('span', 'dsh-pm-sr-only');
     liveEl.setAttribute('role', 'status');
@@ -318,21 +394,23 @@ export function createViewer(deps) {
     apply();
   }
 
-  /** True when the event started on one of the overlay's own controls (a button must stay a click). */
+  /**
+   * True when the press began on one of the overlay's own controls.
+   *
+   * The floating toolbar sits above the viewport, so without this a press that starts on a
+   * button would also start a pan and the diagram would slide out from under the click.
+   */
   function fromControl(event) {
     var target = event && event.target;
     if (!target || typeof target.closest !== 'function') return false;
-    return !!target.closest('button, a, input, [contenteditable]');
+    return !!target.closest(CHROME_SELECTOR);
   }
 
   function onPointerDown(event) {
     if (!isOpenState) return;
     if (event && event.button != null && event.button !== 0) return;
-    var target = event && event.target;
-    pressMarked = !!(target && target.closest && target.closest('svg, ' + CHROME_SELECTOR));
     // A press that begins on a control is that control's, not the start of a drag.
     if (fromControl(event)) return;
-    dragMoved = false;
     drag = { x: event.clientX, y: event.clientY, tx: zoom.tx, ty: zoom.ty };
     if (event && event.pointerId != null && viewport && typeof viewport.setPointerCapture === 'function') {
       try { viewport.setPointerCapture(event.pointerId); } catch (error) { /* optional */ }
@@ -343,11 +421,7 @@ export function createViewer(deps) {
 
   function onPointerMove(event) {
     if (!drag || !event) return;
-    // A press that moved is a pan, not a click: the click that ends it must not close the
-    // viewer (see onViewportClick).
-    if (Math.abs(event.clientX - drag.x) > DRAG_SLOP || Math.abs(event.clientY - drag.y) > DRAG_SLOP) {
-      dragMoved = true;
-    }
+    // A pan is never a click: the diagram follows the pointer and the overlay stays open.
     zoom.tx = drag.tx + (event.clientX - drag.x);
     zoom.ty = drag.ty + (event.clientY - drag.y);
     apply();
@@ -358,21 +432,50 @@ export function createViewer(deps) {
     drag = null;
   }
 
+  /**
+   * The wheel zooms the diagram, anchored at the pointer.
+   *
+   * In the fullscreen overlay the diagram owns the whole window, so there is nothing for a
+   * plain wheel to scroll: the only sensible reading of a scroll gesture here is "get closer
+   * to what I am pointing at". The event is always consumed, otherwise the page behind the
+   * overlay would scroll under the user's feet.
+   *
+   * The deltas are normalized to "notches" first: browsers report a wheel notch as ~100px,
+   * as 3 lines or as a whole page, and the zoom rate has to feel the same on all of them.
+   * One notch is worth ZOOM_NOTCH (about 10%), and a trackpad's small continuous deltas
+   * turn into a smooth ramp.
+   */
   function onWheel(event) {
     if (!isOpenState || !event) return;
-    if (!event.ctrlKey && !event.metaKey) return;
     if (typeof event.preventDefault === 'function') event.preventDefault();
-    var pointX = event.clientX;
-    var pointY = event.clientY;
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    var pointX = 0;
+    var pointY = 0;
     if (viewport && typeof viewport.getBoundingClientRect === 'function') {
       var rect = viewport.getBoundingClientRect();
-      pointX = (typeof pointX === 'number' ? pointX : rect.left + rect.width / 2) - rect.left;
-      pointY = (typeof pointY === 'number' ? pointY : rect.top + rect.height / 2) - rect.top;
+      pointX = (typeof event.clientX === 'number' ? event.clientX : rect.left + rect.width / 2) - rect.left;
+      pointY = (typeof event.clientY === 'number' ? event.clientY : rect.top + rect.height / 2) - rect.top;
     }
-    var delta = typeof event.deltaY === 'number' ? event.deltaY : 0;
-    var factor = Math.exp(-delta * 0.0015);
+    var notches = wheelNotches(event);
+    if (!notches) return;
+    var factor = Math.exp(-notches * ZOOM_NOTCH);
     if (!isFinite(factor) || factor <= 0 || factor === 1) factor = ZOOM_STEP;
     zoomBy(factor, pointX, pointY);
+  }
+
+  /**
+   * The wheel delta as a number of notches.
+   *
+   * deltaMode 0 is pixels (~100 per notch), 1 is lines (3 per notch) and 2 is pages.
+   * Anything else is treated as pixels.
+   */
+  function wheelNotches(event) {
+    var delta = typeof event.deltaY === 'number' ? event.deltaY : 0;
+    if (!delta) return 0;
+    var mode = typeof event.deltaMode === 'number' ? event.deltaMode : 0;
+    if (mode === 1) return delta / 3;
+    if (mode === 2) return delta;
+    return delta / 100;
   }
 
   function onResize() {
@@ -483,30 +586,24 @@ export function createViewer(deps) {
     else if (key === 'ArrowDown') panBy(0, step);
   }
 
-/** The interactive parts of the viewer chrome inside the viewport (a click on one is not a click on the page). */
+/** The interactive parts of the viewer chrome (a press on one belongs to the control). */
   var CHROME_SELECTOR = 'button, a, input, select, textarea, [contenteditable], [role="button"]';
 
   /**
-   * The diagram viewport fills the whole overlay below the bar, so it doubles as the "page
-   * around the diagram".
+   * A click inside the overlay is swallowed, never interpreted.
    *
-   * A viewed SVG swallows pointerdown/pointerup once the press starts, so in a real browser a
-   * click on the DIAGRAM bubbles as a click whose target is only the viewport. Closing on that
-   * would make "click the diagram" also mean "close", which is wrong. The close therefore
-   * looks at the press itself (pressMarked): a press on the svg, on any chrome control or on
-   * a drag is not a background click; only a plain press on the empty page closes.
+   * The viewport fills the whole overlay, so a click on the diagram, on the empty area or on
+   * the floating controls all arrive here. Closing the overlay on any of them made both
+   * ordinary interactions destructive - a drag ended with a click, and a click anywhere near
+   * the diagram dismissed it - and the "which press was that?" bookkeeping it needed
+   * (pressMarked / dragMoved) was guesswork that could not tell a click from the tail of a
+   * pan. The overlay is now closed deliberately: the exit control or Escape, nothing else.
    */
-  function onViewportClick(event) {
+  function onOverlayClick(event) {
     swallow(event);
-    if (!isOpenState) return;
-    var target = event && event.target;
-    if (target && target.closest && target.closest('svg, ' + CHROME_SELECTOR)) return;
-    if (dragMoved) { dragMoved = false; return; }
-    if (pressMarked) { pressMarked = false; return; }
-    closeViewer();
   }
 
-  /** A click inside the chrome must not fall through to the backdrop. */
+  /** A click inside the chrome must not fall through to anything behind the overlay. */
   function swallow(event) {
     if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
   }
@@ -517,13 +614,15 @@ export function createViewer(deps) {
     listen(viewport, usePointer ? 'pointerdown' : 'mousedown', onPointerDown);
     listen(doc, usePointer ? 'pointermove' : 'mousemove', onPointerMove);
     listen(doc, usePointer ? 'pointerup' : 'mouseup', onPointerUp);
-    listen(viewport, 'wheel', onWheel, { passive: false });
+    // The wheel zooms. It is bound to the OVERLAY, not to the viewport, so a scroll over the
+    // floating controls zooms too instead of doing nothing.
+    listen(root, 'wheel', onWheel, { passive: false });
     listen(doc, 'keydown', onKeydown);
     listen(win, 'resize', onResize);
-    // The bar and the viewport sit above the backdrop, so their clicks must not bubble to it:
-    // clicking a zoom button, or dragging the diagram, must not close the overlay.
-    listen(bar, 'click', swallow);
-    listen(viewport, 'click', onViewportClick);
+    // Every click inside the overlay is swallowed: the diagram, the empty area and the
+    // floating controls all reach this one handler, and none of them may fall through to the
+    // page behind or be read as "close".
+    listen(root, 'click', onOverlayClick);
     // The diagnostic taps come AFTER the real handlers (so an early close is still recorded)
     // and observe without ever preventing or stopping anything.
     listen(root, 'pointerdown', function (event) { diagLog(event, 'down'); }, { passive: true });

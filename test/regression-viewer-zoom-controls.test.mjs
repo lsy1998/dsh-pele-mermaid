@@ -1,9 +1,11 @@
 // test/regression-viewer-zoom-controls.test.mjs — regression tests for the fullscreen exit
 // affordance (Defect C) and the inline zoom controls (Defect D).
 //
-// C: the fullscreen overlay must offer an unmistakable exit: a labelled TEXT button (not just a
-//    ✕ glyph), a backdrop click, and Escape - while a click on the diagram or the bar must NOT
-//    close it.
+// C: the fullscreen overlay must offer an unmistakable exit - a labelled TEXT button and
+//    Escape - and NOTHING else may close it. A click on the diagram, on the empty area, on
+//    the scrim or on the floating controls must leave the overlay open, because the scrim
+//    used to sit above the viewport and swallow every press: a click closed the viewer and a
+//    drag closed it too (Defect F).
 // D: the inline toolbar must expose labelled zoom in / zoom out / reset controls, and a click must
 //    ALWAYS change the zoom state even when the pane has no layout yet (the "zoom buttons do not
 //    respond" symptom).
@@ -166,13 +168,13 @@ if (!clientAvailable) {
    * Defect C — an unmistakable way out of the fullscreen overlay
    * ---------------------------------------------------------------- */
 
-  test('C: the overlay offers a labelled text exit button, a backdrop click and Escape', async () => {
+  test('C: the overlay offers an icon exit button and Escape', async () => {
     const { handle, container, teardown } = await boot();
     try {
       const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
       assert.ok(trigger, 'the Fullscreen trigger must exist');
 
-      // 1) the labelled text button
+      // 1) the icon-only exit button
       click(handle, trigger);
       await flushAsync(2);
       const overlay = handle.doc.querySelector('.dsh-pm-viewer');
@@ -182,30 +184,24 @@ if (!clientAvailable) {
         return /exit|close|dismiss/i.test(name);
       });
       assert.ok(exitButton, 'the overlay must have an exit control');
-      // Not just a glyph: the button carries VISIBLE text.
+      // ICON-ONLY: no visible text, just the graphic. The name still travels with the
+      // control through aria-label and title, so nothing is lost to AT or to a hover.
       const visibleText = (exitButton.textContent || '').trim();
-      assert.ok(visibleText.length > 1,
-        'the exit control must show a visible label, got ' + JSON.stringify(visibleText));
-      assert.ok(/exit|close|dismiss|退出|关闭/i.test(visibleText),
-        'the visible label must say exit/close, got ' + JSON.stringify(visibleText));
+      assert.equal(visibleText, '',
+        'the exit control must be icon-only, got visible text ' + JSON.stringify(visibleText));
+      const icon = exitButton.querySelector('svg');
+      assert.ok(icon, 'the exit control must carry an SVG icon');
+      assert.equal(icon.getAttribute('aria-hidden'), 'true', 'the icon must be hidden from AT');
+      assert.ok((exitButton.getAttribute('aria-label') || '').trim().length > 0,
+        'the icon-only exit control still needs an accessible name');
+      assert.ok((exitButton.getAttribute('title') || '').trim().length > 0,
+        'the icon-only exit control still needs a hover tooltip');
       // The overlay really closes with it.
       click(handle, exitButton);
       await flushAsync(2);
       assert.equal(handle.doc.querySelector('.dsh-pm-viewer'), null, 'the exit button must close the overlay');
 
-      // 2) a backdrop click
-      click(handle, trigger);
-      await flushAsync(2);
-      const reopened = handle.doc.querySelector('.dsh-pm-viewer');
-      assert.ok(reopened, 'the overlay must re-open');
-      const backdrop = reopened.querySelector('.dsh-pm-viewer-backdrop');
-      assert.ok(backdrop, 'the overlay must have a backdrop');
-      click(handle, backdrop);
-      await flushAsync(2);
-      assert.equal(handle.doc.querySelector('.dsh-pm-viewer'), null,
-        'a backdrop click must close the overlay');
-
-      // 3) Escape still works
+      // 2) Escape still works
       click(handle, trigger);
       await flushAsync(2);
       assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'the overlay must open again');
@@ -215,28 +211,89 @@ if (!clientAvailable) {
     } finally { teardown(); }
   });
 
-  test('C: a click on the diagram or the bar does NOT close the overlay', async () => {
+  /**
+   * Every control in the overlay is an icon: a row of five text buttons in the corner of
+   * the window is noisy and the diagram deserves the space. The names live in aria-label
+   * and title, so a screen reader and a hover both still work.
+   */
+  test('C: every overlay control is an icon with a localized name', async () => {
     const { handle, container, teardown } = await boot();
     try {
       const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
       click(handle, trigger);
       await flushAsync(2);
       const overlay = handle.doc.querySelector('.dsh-pm-viewer');
-      assert.ok(overlay, 'the overlay must open');
-      // A click on the DIAGRAM is a click on the svg; the empty area around it is the
-      // "page" and does close the viewer (the viewport fills the overlay).
-      const svg = overlay.querySelector('.dsh-pm-viewport svg');
-      assert.ok(svg, 'the diagram must be mounted');
-      click(handle, svg);
+      const buttons = [...overlay.querySelectorAll('button')];
+      assert.ok(buttons.length >= 5, 'expected the four view controls plus the exit, got ' + buttons.length);
+      for (const control of buttons) {
+        const name = (control.getAttribute('aria-label') || '').trim();
+        assert.ok(name.length > 0, 'every icon control needs an accessible name');
+        assert.ok((control.getAttribute('title') || '').trim().length > 0,
+          'every icon control needs a hover tooltip: ' + name);
+        assert.equal((control.textContent || '').trim(), '',
+          'the control must be icon-only: ' + name);
+        const icon = control.querySelector('svg');
+        assert.ok(icon, 'the control must carry an SVG icon: ' + name);
+        assert.ok(icon.getAttribute('viewBox'), 'the icon needs a viewBox to scale: ' + name);
+      }
+    } finally { teardown(); }
+  });
+
+  /**
+   * Defect F: the scrim used to be a click-to-close surface AND it painted ABOVE the viewport
+   * (z-index:1 against the viewport's auto), so in a real browser every press landed on it - a
+   * click dismissed the viewer and a drag dismissed it too. The scrim is now inert, and the
+   * overlay is closed ONLY by the exit control or Escape, so no press inside it is destructive.
+   */
+  test('C: no press inside the overlay closes it - only the exit control and Escape do', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
+      click(handle, trigger);
       await flushAsync(2);
-      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a click on the diagram must not close the overlay');
-      click(handle, handle.doc.querySelector('.dsh-pm-viewer').querySelector('.dsh-pm-viewer-bar'));
+      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'the overlay must open');
+      const stillOpen = (what) => {
+        assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), what + ' must NOT close the overlay');
+      };
+
+      // The scrim exists (SPEC §7 keeps the class) but takes no press and closes nothing.
+      const overlay = handle.doc.querySelector('.dsh-pm-viewer');
+      const backdrop = overlay.querySelector('.dsh-pm-viewer-backdrop');
+      assert.ok(backdrop, 'the overlay must still carry the scrim node');
+      assert.equal(backdrop.getAttribute('aria-hidden'), 'true', 'the scrim must stay hidden from AT');
+      assert.equal(backdrop.onclick, null, 'the scrim must not carry a click handler');
+      click(handle, backdrop);
       await flushAsync(2);
-      assert.ok(handle.doc.querySelector('.dsh-pm-viewer'), 'a click on the bar must not close the overlay');
-      // The page around the diagram still closes the viewer.
-      click(handle, handle.doc.querySelector('.dsh-pm-viewer').querySelector('.dsh-pm-viewport'));
+      stillOpen('a scrim click');
+
+      // A click on the DIAGRAM, on the empty area and on the floating controls: all stay open.
+      click(handle, overlay.querySelector('.dsh-pm-viewport svg'));
       await flushAsync(2);
-      assert.equal(handle.doc.querySelector('.dsh-pm-viewer'), null, 'a click on the empty page closes the viewer');
+      stillOpen('a click on the diagram');
+      click(handle, handle.doc.querySelector('.dsh-pm-viewer-bar'));
+      await flushAsync(2);
+      stillOpen('a click on the floating controls');
+      click(handle, handle.doc.querySelector('.dsh-pm-viewport'));
+      await flushAsync(2);
+      stillOpen('a click on the empty area');
+
+      // A real drag - press, move, release - pans and must not close either.
+      const viewport = handle.doc.querySelector('.dsh-pm-viewport');
+      const stage = handle.doc.querySelector('.dsh-pm-stage');
+      viewport.dispatchEvent(new handle.win.PointerEvent('pointerdown',
+        { bubbles: true, cancelable: true, pointerId: 7, button: 0, buttons: 1, clientX: 400, clientY: 300 }));
+      handle.doc.dispatchEvent(new handle.win.PointerEvent('pointermove',
+        { bubbles: true, cancelable: true, pointerId: 7, buttons: 1, clientX: 460, clientY: 340 }));
+      handle.doc.dispatchEvent(new handle.win.PointerEvent('pointerup',
+        { bubbles: true, cancelable: true, pointerId: 7, button: 0, buttons: 0, clientX: 460, clientY: 340 }));
+      await flushAsync(2);
+      stillOpen('a drag');
+      assert.ok(stage.style.transform, 'the drag must still pan the diagram, transform: ' + stage.style.transform);
+
+      // Escape is still the keyboard way out.
+      handle.doc.dispatchEvent(new handle.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await flushAsync(2);
+      assert.equal(handle.doc.querySelector('.dsh-pm-viewer'), null, 'Escape must still close the overlay');
     } finally { teardown(); }
   });
 
@@ -280,8 +337,11 @@ if (!clientAvailable) {
       await flushAsync(2);
       const zoomed = zoomOf(pane);
       assert.ok(zoomed > before, 'the Zoom in click must change the state, got ' + zoomed);
-      assert.ok(/px$/.test(pane.querySelector('svg').style.width || ''),
-        'the zoomed svg must get an explicit width even without layout');
+      // The size lives on the inline STAGE, not on the svg: Pele rewrites the whole style
+      // attribute of the svg it mounted whenever the pane resizes, so a zoom written there was
+      // wiped the moment the zoom changed the pane's content size (see inlineStage).
+      assert.ok(/px$/.test(pane.querySelector('.dsh-pm-inline-stage').style.width || ''),
+        'the zoomed stage must get an explicit width even without layout');
 
       const zoomOut = buttonsIn(container).find((b) => /^zoom out$/i.test(accessibleName(b)));
       click(handle, zoomOut);
@@ -322,12 +382,14 @@ if (!clientAvailable) {
       click(handle, zoomIn);
       await flushAsync(2);
       assert.ok(zoomOf(pane) > 100, 'the click must zoom with a real layout too');
-      const svg = pane.querySelector('svg');
-      const width = parseFloat(svg.style.width) || 0;
+      const stage = pane.querySelector('.dsh-pm-inline-stage');
+      const width = parseFloat(stage.style.width) || 0;
       // The pane is 400px wide, so the fit scale is 400/1200 and the on-screen width after
       // one zoom step is 1200 * (1/3) * 1.25 = 500px - i.e. bigger than the pane.
-      assert.ok(width > PANE_WIDTH, 'the svg must grow past the pane, got ' + width);
-      assert.equal(svg.style.maxWidth, 'none', 'a zoomed svg must not be clamped by max-width');
+      assert.ok(width > PANE_WIDTH, 'the stage must grow past the pane, got ' + width);
+      // The svg is laid out BY the stage through the stylesheet, which is what makes the size
+      // immune to Pele rewriting the svg's inline style on every pane resize.
+      assert.equal(stage.contains(pane.querySelector('svg')), true, 'the svg must live inside the stage');
     } finally { teardown(); }
   });
   /* ---------------------------------------------------------------- *
@@ -361,17 +423,20 @@ if (!clientAvailable) {
     };
     win.document.body.getBoundingClientRect = () => box(0, 0, 1280, 728);
     overlay.getBoundingClientRect = () => box(0, 0, 1280, 728);
+    // The controls float in the bottom-right corner now, so the bar's box is there - not a
+    // full-width strip at the top. A stale box here is what let a control sit "under" the
+    // scrim in the hit test while it was really fine.
     const bar = overlay.querySelector('.dsh-pm-viewer-bar');
-    if (bar) bar.getBoundingClientRect = () => box(0, 0, 1280, 48);
+    if (bar) bar.getBoundingClientRect = () => box(1120, 480, 144, 232);
     const viewport = overlay.querySelector('.dsh-pm-viewport');
     if (viewport) {
       // useLayout: a browser reports the laid-out viewport through offsetWidth/offsetHeight, and
       // lit-html reads its dimensions from there. clientWidth/clientHeight alone are not enough.
       patch(viewport, 'clientWidth', 1280);
-      patch(viewport, 'clientHeight', 680);
+      patch(viewport, 'clientHeight', 728);
       patch(viewport, 'offsetWidth', 1280);
-      patch(viewport, 'offsetHeight', 680);
-      viewport.getBoundingClientRect = () => box(0, 48, 1280, 680);
+      patch(viewport, 'offsetHeight', 728);
+      viewport.getBoundingClientRect = () => box(0, 0, 1280, 728);
     }
     return { bar, viewport };
   }
@@ -388,22 +453,32 @@ if (!clientAvailable) {
       Object.defineProperty(element, key, { configurable: true, get: () => value });
     };
     patch(viewport, 'clientWidth', 1280);
-    patch(viewport, 'clientHeight', 680);
+    patch(viewport, 'clientHeight', 728);
     patch(viewport, 'offsetWidth', 1280);
-    patch(viewport, 'offsetHeight', 680);
+    patch(viewport, 'offsetHeight', 728);
   }
 
   /**
-   * Hit test the way a browser does: walk the overlay's children from the LAST (painted on
-   * top) to the first and return the first one whose box contains the point. Elements that
-   * are hidden or have pointer-events:none are never hit. This is what shows whether a
-   * control is really in front of the backdrop/bar it sits under.
+   * Hit test the way a browser does: consider the overlay's children in PAINT order (highest
+   * z-index first, document order breaking ties) and return the first one whose box contains
+   * the point. Elements that are hidden or have pointer-events:none are never hit.
+   *
+   * The z-index part is the load-bearing one. The old version walked the children in reverse
+   * DOCUMENT order and ignored z-index, which asserted "the controls are above the scrim" for
+   * the wrong reason: it passed while the scrim was in fact painted over the diagram and over
+   * everything, which is why dragging and clicking both closed the viewer in a real browser
+   * and no test noticed.
    */
   function hitTest(handle, overlay, x, y) {
     const win = handle.win;
     const children = [...overlay.children];
-    for (let index = children.length - 1; index >= 0; index -= 1) {
-      const child = children[index];
+    const stack = children.map((element, order) => {
+      const style = win.getComputedStyle(element);
+      const z = parseInt(style.zIndex, 10);
+      return { element, order, z: Number.isFinite(z) ? z : 0 };
+    }).sort((a, b) => (b.z - a.z) || (b.order - a.order));
+    for (const entry of stack) {
+      const child = entry.element;
       const style = win.getComputedStyle(child);
       if (style.display === 'none' || style.visibility === 'hidden') continue;
       if (style.pointerEvents === 'none') continue;
@@ -423,7 +498,7 @@ if (!clientAvailable) {
     return hit;
   }
 
-  test('E: a control press keeps the overlay bar in front and the diagram mounted', async () => {
+  test('E: a control press keeps the overlay controls in front and the diagram mounted', async () => {
     const { handle, container, teardown } = await boot();
     try {
       const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
@@ -433,19 +508,26 @@ if (!clientAvailable) {
       assert.ok(overlay, 'the overlay must open');
       giveViewerLayout(handle, overlay);
       const stage = overlay.querySelector('.dsh-pm-stage');
+      // The floating controls sit in the bottom-right corner and must hit-test ABOVE the
+      // scrim and the viewport, or a press on them would fall through to the diagram.
+      const barHit = hitTest(handle, overlay, 1190, 560);
+      assert.ok(barHit && barHit.element.classList.contains('dsh-pm-viewer-bar'),
+        'the point over the floating controls hits ' + JSON.stringify(barHit));
       for (const name of ['Zoom in', 'Zoom out', 'Fit to window', 'Reset zoom to 100%']) {
         const control = overlayButton(overlay, name);
         assert.ok(control, 'the viewer must offer a ' + name + ' control');
-        // The bar is the first child and the backdrop is appended last, but the bar is
-        // position: relative, so it still paints (and hit-tests) above the backdrop.
-        const barHit = hitTest(handle, overlay, 640, 24);
-        assert.ok(barHit && barHit.element.classList.contains('dsh-pm-viewer-bar'),
-          name + ' blocker: the point over the bar hits ' + JSON.stringify(barHit));
         click(handle, control);
         await flushAsync(2);
         assert.ok(overlay.querySelector('.dsh-pm-stage') === stage, name + ' must not replace the stage');
         assert.ok(stage.firstChild, name + ' must leave the diagram mounted');
         assert.ok(stage.style.transform, name + ' must leave the zoom transform applied');
+      }
+      // The scrim must never be the hit: it covers the whole window, so if it wins a hit test
+      // anywhere, every press in the overlay is being eaten by a decorative layer.
+      for (const point of [[640, 364], [200, 100], [1000, 650]]) {
+        const hit = hitTest(handle, overlay, point[0], point[1]);
+        assert.ok(!hit || !hit.element.classList.contains('dsh-pm-viewer-backdrop'),
+          'the scrim must not be hit at ' + point.join(',') + ', got ' + JSON.stringify(hit));
       }
     } finally { teardown(); }
   });
@@ -572,6 +654,127 @@ if (!clientAvailable) {
       const reset = geometry();
       assert.equal(reset.scale, 1, 'Reset must return to the natural size');
       assert.equal(live.textContent, '100%', 'Reset must report 100%');
+    } finally { teardown(); }
+  });
+
+  /* ---------------------------------------------------------------- *
+   * Defect G — "the wheel does nothing in the fullscreen viewer"
+   *
+   * In the overlay the diagram owns the whole window, so there is nothing for a plain
+   * wheel to scroll: the only sensible reading of the gesture is "get closer to what I
+   * am pointing at". The wheel therefore zooms at the pointer, with NO modifier key.
+   * The INLINE pane keeps its old contract (Ctrl/Meta + wheel zooms, a plain wheel
+   * scrolls the page) - that one is embedded in a real page and must not steal the
+   * reader's scroll.
+   * ---------------------------------------------------------------- */
+
+  test('G: a plain wheel over the overlay zooms the diagram at the pointer', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
+      click(handle, trigger);
+      await flushAsync(2);
+      const overlay = handle.doc.querySelector('.dsh-pm-viewer');
+      assert.ok(overlay, 'the overlay must open');
+      giveViewerLayout(handle, overlay);
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const stage = overlay.querySelector('.dsh-pm-stage');
+      const geometry = () => {
+        const match = /translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([\d.]+)\)/.exec(stage.style.transform || '');
+        assert.ok(match, 'the stage must carry a zoom transform, got ' + JSON.stringify(stage.style.transform));
+        return { x: Number(match[1]), y: Number(match[2]), scale: Number(match[3]) };
+      };
+      const scrollAt = (x, y, deltaY) => {
+        const event = new handle.win.WheelEvent('wheel', {
+          bubbles: true, cancelable: true, deltaY, deltaMode: 0,
+        });
+        // happy-dom's WheelEvent does not read clientX/clientY from the init dict, so they
+        // are assigned afterwards - otherwise the anchor would silently fall back to the
+        // viewport centre and the pointer-anchoring assertion would test nothing.
+        event.clientX = x;
+        event.clientY = y;
+        overlay.dispatchEvent(event);
+        return event;
+      };
+
+      const start = geometry();
+      // Wheel UP (deltaY < 0) zooms in. No ctrlKey, no metaKey - a plain wheel.
+      const up = scrollAt(400, 300, -100);
+      await flushAsync(2);
+      const zoomedIn = geometry();
+      assert.ok(zoomedIn.scale > start.scale,
+        'a plain wheel up must zoom in, ' + JSON.stringify([start, zoomedIn]));
+      assert.equal(up.defaultPrevented, true,
+        'the wheel must be consumed, otherwise the page behind scrolls under the overlay');
+
+      // Wheel DOWN zooms out.
+      scrollAt(400, 300, 100);
+      await flushAsync(2);
+      const zoomedOut = geometry();
+      assert.ok(zoomedOut.scale < zoomedIn.scale,
+        'a plain wheel down must zoom out, ' + JSON.stringify([zoomedIn, zoomedOut]));
+
+      // The zoom is anchored at the pointer: the content point under the cursor does not move.
+      // The stage is drawn as translate(tx,ty) scale(s), so the content coordinate of a
+      // viewport point p is (p - tx) / s - that is the value that must stay constant.
+      const before = geometry();
+      scrollAt(400, 300, -100);
+      await flushAsync(2);
+      const after = geometry();
+      const naturalBefore = (400 - before.x) / before.scale;
+      const naturalAfter = (400 - after.x) / after.scale;
+      assert.ok(Math.abs(naturalAfter - naturalBefore) < 0.5,
+        'the content point under the pointer must stay put, drifted from ' + naturalBefore + ' to ' + naturalAfter);
+      const naturalYBefore = (300 - before.y) / before.scale;
+      const naturalYAfter = (300 - after.y) / after.scale;
+      assert.ok(Math.abs(naturalYAfter - naturalYBefore) < 0.5,
+        'the content point under the pointer must stay put, drifted from ' + naturalYBefore + ' to ' + naturalYAfter);
+    } finally { teardown(); }
+  });
+
+  test('G: the wheel zoom is normalized across deltaModes and reports to the live region', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const trigger = buttonsIn(container).find((b) => /fullscreen/i.test(accessibleName(b)));
+      click(handle, trigger);
+      await flushAsync(2);
+      const overlay = handle.doc.querySelector('.dsh-pm-viewer');
+      giveViewerLayout(handle, overlay);
+      giveViewerLayoutAfterOpen(handle, overlay);
+      const stage = overlay.querySelector('.dsh-pm-stage');
+      const scaleOf = () => {
+        const match = /scale\(([\d.]+)\)/.exec(stage.style.transform || '');
+        assert.ok(match, 'the stage must carry a zoom transform, got ' + JSON.stringify(stage.style.transform));
+        return Number(match[1]);
+      };
+      const scroll = (deltaY, deltaMode) => {
+        const event = new handle.win.WheelEvent('wheel', {
+          bubbles: true, cancelable: true, deltaY, deltaMode,
+        });
+        event.clientX = 640;
+        event.clientY = 364;
+        overlay.dispatchEvent(event);
+        return event;
+      };
+      const live = overlay.querySelector('[role="status"]');
+
+      // One notch in PIXEL mode (deltaMode 0, deltaY -100) is one notch in LINE mode
+      // (deltaMode 1, deltaY -3): the zoom rate must not depend on the reporting unit.
+      const start = scaleOf();
+      scroll(-100, 0);
+      await flushAsync(2);
+      const pixelScale = scaleOf();
+      scroll(100, 0);
+      await flushAsync(2);
+      const back = scaleOf();
+      scroll(-3, 1);
+      await flushAsync(2);
+      const lineScale = scaleOf();
+      assert.ok(Math.abs(lineScale - pixelScale) < 0.001,
+        'a pixel notch and a line notch must zoom the same: ' + pixelScale + ' vs ' + lineScale);
+      assert.ok(Math.abs(back - start) < 0.001,
+        'a wheel down must undo a wheel up: ' + start + ' -> ' + pixelScale + ' -> ' + back);
+      assert.match(live.textContent, /%$/, 'the zoom must be reported to the live region');
     } finally { teardown(); }
   });
 }

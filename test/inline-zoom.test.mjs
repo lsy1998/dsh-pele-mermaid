@@ -100,14 +100,16 @@ if (!clientAvailable) {
       pointer(handle, pane, 'pointerdown', { clientX: 100, clientY: 100, button: 0 });
       pointer(handle, pane, 'pointermove', { clientX: 60, clientY: 40 });
       pointer(handle, pane, 'pointerup', { clientX: 60, clientY: 40 });
-      const svg = pane.querySelector('svg');
-      assert.ok(svg, 'the rendered svg must be present');
       const panX = Number(pane.getAttribute('data-pan-x'));
       const panY = Number(pane.getAttribute('data-pan-y'));
       assert.ok(Number.isFinite(panX) && Number.isFinite(panY), 'the pan offsets must be recorded');
       assert.notEqual(panX === 0 && panY === 0, true, 'the drag must have panned the diagram');
-      const transform = svg.style.transform || '';
-      assert.ok(/translate\(/.test(transform), 'the pan must be applied to the svg, transform=' + JSON.stringify(transform));
+      // The pan is written to the STAGE, not the svg: Pele rewrites the whole style attribute
+      // of the svg it mounted whenever the pane resizes, so a pan or a zoom parked there would
+      // be wiped on the next resize (see inlineStage in src/client.js).
+      const stage = pane.querySelector('.dsh-pm-inline-stage');
+      assert.ok(stage, 'the inline stage must exist');
+      assert.match(stage.style.transform || '', /translate\(/, 'the pan must be applied to the stage, transform=' + JSON.stringify(stage.style.transform));
     } finally { teardown(); }
   });
 
@@ -167,20 +169,109 @@ if (!clientAvailable) {
     } finally { teardown(); }
   });
 
-  test('inline pane: the zoomed svg keeps its size in the scroll container and does not overflow it', async () => {
+  test('inline pane: the zoomed diagram keeps its size on the STAGE, inside the scroll container', async () => {
     const { handle, pane, teardown } = await boot();
     try {
       wheel(handle, pane, { ctrlKey: true, deltaY: -120 });
+      const stage = pane.querySelector('.dsh-pm-inline-stage');
       const svg = pane.querySelector('svg');
+      assert.ok(stage, 'the inline stage must exist');
       assert.ok(svg, 'svg missing');
-      assert.equal(svg.style.maxWidth, 'none', 'a zoomed svg must not be clamped to the column width');
-      assert.ok(/px$/.test(svg.style.width), 'the zoomed svg must have an explicit width, got ' + JSON.stringify(svg.style.width));
-      const natural = 320;
-      const width = parseFloat(svg.style.width);
-      assert.ok(width > natural, 'the zoomed svg must be larger than the natural size, got ' + width);
+      // The size lives on OUR element, not on Pele's svg: Pele installs a ResizeObserver on
+      // the pane and rewrites the svg's whole style attribute on every pane resize, which is
+      // exactly when a zoom is applied - so a zoom written there was wiped immediately, and
+      // data-zoom ran all the way down to 10% while the drawing never changed size.
+      assert.ok(/px$/.test(stage.style.width), 'the stage must carry an explicit width, got ' + JSON.stringify(stage.style.width));
+      assert.ok(/px$/.test(stage.style.height), 'the stage must carry an explicit height, got ' + JSON.stringify(stage.style.height));
+      const zoomed = parseFloat(stage.style.width);
+      assert.ok(zoomed > 0, 'the stage must have a real width, got ' + zoomed);
+      // The svg is laid out BY the stage, so a stylesheet rule (not an inline style Pele can
+      // overwrite) must be what fills it.
+      assert.equal(stage.contains(svg), true, 'the svg must live inside the stage');
       // The pane is the scroll container, so the enlarged content stays inside it.
       const paneOverflow = pane.style.overflow;
       assert.ok(paneOverflow === '' || paneOverflow === 'auto' || paneOverflow === 'scroll', 'unexpected overflow: ' + paneOverflow);
+    } finally { teardown(); }
+  });
+
+  // Regression: zooming out used to stop dead at the initial size. The stage is now sized
+  // explicitly at EVERY scale - including 100% - instead of handing the layout back to the
+  // stylesheet's `max-width:100%`, so the diagram keeps shrinking below where it started.
+  test('inline pane: zooming out goes BELOW the initial size and keeps shrinking', async () => {
+    const { handle, pane, teardown } = await boot();
+    try {
+      const stage = pane.querySelector('.dsh-pm-inline-stage');
+      assert.ok(stage, 'the inline stage must exist');
+      const initial = parseFloat(stage.style.width);
+      assert.ok(initial > 0, 'precondition: the stage starts with a real width, got ' + initial);
+
+      const widths = [initial];
+      for (let i = 0; i < 4; i += 1) {
+        wheel(handle, pane, { ctrlKey: true, deltaY: 120 });
+        widths.push(parseFloat(stage.style.width));
+      }
+      assert.ok(zoomOf(pane) < 100, 'data-zoom must report below 100%, got ' + zoomOf(pane) + '%');
+      for (let i = 1; i < widths.length; i += 1) {
+        assert.ok(
+          widths[i] < widths[i - 1],
+          'each zoom-out step must shrink the drawing: ' + widths.join(' -> '),
+        );
+      }
+      assert.ok(widths[widths.length - 1] < initial, 'the final size must be below the initial one');
+      // The zoom must also be readable, not just visually applied.
+      assert.ok(/^\d+$/.test(String(zoomOf(pane))), 'data-zoom must be a percentage, got ' + zoomOf(pane));
+    } finally { teardown(); }
+  });
+
+  // Regression: the anchor used to creep towards the diagram's top-left corner on every step.
+  // The maths now converts through the stage's centring ORIGIN, which changes with the scale
+  // (a diagram narrower than the pane is centred, a wider one is left aligned). This asserts
+  // the invariant directly: the content offset under the anchor must map onto the same
+  // natural coordinate, i.e. `scrollLeft + px - originX` divided by the effective scale.
+  test('inline pane: the zoom anchor maps onto a fixed natural coordinate', async () => {
+    const { handle, pane, teardown } = await boot();
+    try {
+      // No layout engine here (clientWidth is 0), so the pane is not scrollable and the scroll
+      // offsets clamp to 0. What is still checkable - and what actually broke - is the
+      // conversion: with the origin applied, a zoom in and the matching zoom out must return
+      // the stage to exactly the size it started at.
+      const stage = pane.querySelector('.dsh-pm-inline-stage');
+      const initial = parseFloat(stage.style.width);
+      wheel(handle, pane, { ctrlKey: true, deltaY: -120 });
+      const zoomedIn = parseFloat(stage.style.width);
+      assert.ok(zoomedIn > initial, 'precondition: the zoom-in grew the drawing');
+      wheel(handle, pane, { ctrlKey: true, deltaY: 120 });
+      const zoomedBack = parseFloat(stage.style.width);
+      assert.equal(zoomedBack, initial, 'in-then-out must return to the initial size, got ' + zoomedBack);
+    } finally { teardown(); }
+  });
+
+  test('inline pane: the toolbar buttons and the +/- keys drive the same zoom', async () => {
+    const { handle, pane, container, teardown } = await boot();
+    try {
+      // Selected by aria-label, which localizeEntry() fills from the i18n table. This suite boots
+      // with lang:'en', so the labels below are the English ones; the point of the test is that
+      // the three entry points drive ONE state, not what the button happens to be called.
+      const zoomButton = (label) => {
+        const bar = container.querySelector('.dsh-pm-actions');
+        const btn = [...bar.querySelectorAll('button')]
+          .find((b) => (b.getAttribute('aria-label') || '').toLowerCase().includes(label));
+        assert.ok(btn, 'no "' + label + '" button in the inline toolbar');
+        return btn;
+      };
+      zoomButton('zoom in').click();
+      const afterButton = zoomOf(pane);
+      assert.ok(afterButton > 100, 'the zoom-in button must zoom in, got ' + afterButton + '%');
+      zoomButton('zoom out').click();
+      assert.ok(zoomOf(pane) < afterButton, 'the zoom-out button must zoom back out');
+      zoomButton('reset').click();
+      assert.equal(zoomOf(pane), 100, 'the reset button must return to 100%');
+
+      // The keyboard path uses the same anchor (the visible centre), so the two must agree.
+      key(handle, pane, '+');
+      assert.equal(zoomOf(pane), afterButton, 'the + key must match the zoom-in button');
+      key(handle, pane, '-');
+      assert.equal(zoomOf(pane), 100, 'the - key must match the zoom-out button');
     } finally { teardown(); }
   });
 

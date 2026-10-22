@@ -99,13 +99,27 @@ test('a GitHub-source install ships a complete package (root cause of the silent
     assert.ok(client.includes('dsh-pele-mermaid'), 'lib/client.js must carry the bundle id');
   }
   assert.ok(
-    typeof pkg.scripts.prepare === 'string',
-    'a "prepare" script must build the artifacts for npm/git installs',
+    typeof pkg.scripts.prepack === 'string',
+    'a "prepack" script must build the artifacts for npm/git installs',
   );
   assert.ok(
-    /build/.test(pkg.scripts.prepare),
-    'the prepare script must run the build',
+    /build/.test(pkg.scripts.prepack),
+    'the prepack script must run the build',
   );
+  // pnpm 11 refuses to install a GIT-hosted dependency whose package.json declares
+  // "prepare", unless the consumer adds it to `allowBuilds` in pnpm-workspace.yaml.
+  // The DSH CLI owns that workspace file, so an installer cannot approve the script
+  // there - the install would just fail. The fix is to ship a package that needs NO
+  // install-time build: the build outputs are committed, and the build runs at pack
+  // time ("prepack") instead of at install time ("prepare").
+  for (const forbidden of ['prepare', 'preinstall', 'install', 'postinstall']) {
+    assert.ok(
+      !pkg.scripts[forbidden],
+      `package.json must not declare a "${forbidden}" script: pnpm 11 blocks install-time ` +
+      'build scripts for git-hosted dependencies unless the consumer allowlists them in ' +
+      'pnpm-workspace.yaml, and the DSH CLI manages that file',
+    );
+  }
 });
 
 test('cordis.patch.yml inserts the ui-pele-mermaid plugin id (SPEC §2)', async () => {

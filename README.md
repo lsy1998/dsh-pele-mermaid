@@ -299,6 +299,13 @@ npm run test:offline
   bundle and the Pele runtime have to be in the repository. Re-run `npm run build` and commit the
   result whenever you change anything under `src/`. `lib/index.js` is hand-written source and the
   build fails fast if it is missing.
+- The build runs from the **`prepack`** script, not `prepare`. pnpm 11 refuses to install a
+  git-hosted dependency that declares an install-time lifecycle script (`prepare`, `preinstall`,
+  `install`, `postinstall`) unless the consumer allowlists it in `pnpm-workspace.yaml`; the DSH
+  CLI owns that file, so an installer cannot approve the script there and the install fails with
+  `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`. Because the build outputs are committed, the install
+  path needs no script at all — `prepack` still rebuilds fresh artifacts when the package is
+  packed or published.
 - `npm run check` runs `node --check` on the JavaScript it ships and builds (including the built
   `lib/client.js` and the installer), then `npm run test:offline`.
 - `npm test` runs `node --test test/`. It uses happy-dom and needs no network or browser, but

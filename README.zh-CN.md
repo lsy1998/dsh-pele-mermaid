@@ -273,6 +273,11 @@ npm run test:offline
   DSH profile 可以直接从 GitHub 源码安装本插件（`github:lsy1998/dsh-pele-mermaid`），该路径不会
   执行构建，因此浏览器 bundle 与 Pele 运行时必须存在于仓库中。改动 `src/` 下的任何内容后，请
   重新执行 `npm run build` 并提交结果。`lib/index.js` 是手写源码，缺失时构建会立即失败。
+- 构建挂在 **`prepack`** 脚本上，而不是 `prepare`。pnpm 11 会拒绝安装声明了安装期生命周期脚本
+  （`prepare`、`preinstall`、`install`、`postinstall`）的 git 依赖，除非使用方在
+  `pnpm-workspace.yaml` 中把它加入白名单；而该文件由 DSH CLI 托管，安装者无法自行放行，
+  安装会直接以 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 失败。由于构建产物已提交到版本库，
+  安装路径完全不需要执行任何脚本——`prepack` 仍会在打包或发布时重建最新产物。
 - `npm run check` 对将要发布与构建的 JavaScript 执行 `node --check`（包括构建产物
   `lib/client.js` 与安装脚本），然后运行 `npm run test:offline`。
 - `npm test` 用 `node --test test/` 运行测试套件，基于 happy-dom，无需网络或浏览器；但 node 会为

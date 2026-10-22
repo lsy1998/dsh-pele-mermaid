@@ -53,6 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Leaving the fullscreen viewer was not obvious.** The close control was a bare glyph among four
   other glyph buttons. The overlay now has a labelled "Exit fullscreen" button, closes on a
   backdrop click, and still closes on `Escape`.
+- **Installing the plugin from GitHub failed under pnpm 11.** The package declared a `prepare`
+  script, and pnpm refuses to install a git-hosted dependency whose package.json declares an
+  install-time lifecycle script unless the consumer allowlists it in `pnpm-workspace.yaml`. The
+  DSH CLI owns that workspace file, so an installer cannot approve the script there and the
+  install aborted with `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`. The `prepare` script was never
+  needed on the install path — the build outputs are committed precisely because a GitHub-source
+  install runs no build — so it has been replaced by `prepack`: the install path now executes no
+  script at all, while packing and publishing still rebuild fresh artifacts.
 
 ## [0.1.0] - 2026-10-19
 

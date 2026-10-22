@@ -26,7 +26,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check scripts/build.mjs && node --check lib/index.js && node --check lib/client.js && node --check lib/pele-runtime.js && node --check bin/dsh-pele-mermaid.mjs && node --check src/zoom.js && node --check src/runtime.js && node --check src/svg.js && node --check src/viewer.js && npm run test:offline",
-    "test": "node --test test/",
+    "test": "node --test --experimental-test-isolation=none \"test/**/*.test.mjs\"",
     "test:offline": "node --test --experimental-test-isolation=none \"test/**/*.test.mjs\"",
     "prepare": "npm run build"
   },

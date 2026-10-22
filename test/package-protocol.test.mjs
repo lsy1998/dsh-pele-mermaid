@@ -31,7 +31,17 @@ test('package.json declares the frozen wire protocol (SPEC §2)', () => {
 });
 
 test('package.json scripts match SPEC §8 and the lead sandbox amendment', () => {
-  assert.equal(pkg.scripts && pkg.scripts.test, 'node --test test/', 'npm test must stay canonical');
+  const test = pkg.scripts && pkg.scripts.test;
+  assert.equal(typeof test, 'string', 'npm test script required');
+  // The DIRECTORY form (`node --test test/`) is what CI used to run and it cannot work:
+  // Node resolves the bare path as a module and dies with "Cannot find module '<repo>/test'".
+  // So the thing to pin is that the script names test FILES, not that it names a directory -
+  // pinning the directory spelling only locks in the failure.
+  assert.match(test, /\.test\.mjs|\.test\.js|test\/\*\*/, 'npm test must name the test files: ' + test);
+  assert.ok(
+    !/(^|\s)test\/?\s*$/.test(test),
+    'the bare directory form fails on Node 22 with "Cannot find module"; use a glob instead: ' + test,
+  );
   const offline = pkg.scripts && pkg.scripts['test:offline'];
   assert.equal(typeof offline, 'string', 'test:offline script required (lead amendment)');
   assert.match(offline, /--experimental-test-isolation=none/);

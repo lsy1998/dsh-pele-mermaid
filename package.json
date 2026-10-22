@@ -1,7 +1,11 @@
 {
-  "name": "dsh-pele-mermaid",
+  "name": "@lsy1998/dsh-pele-mermaid",
   "version": "0.1.0",
   "description": "Render Mermaid code blocks in the DeepSeek Harness Web UI as SVG with Pele (no mermaid.js runtime).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lsy1998/dsh-pele-mermaid.git"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -31,7 +35,7 @@
     "prepare": "npm run build"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/"
+    "registry": "https://npm.pkg.github.com/lsy1998/"
   },
   "dsh": {
     "bundle": {

@@ -15,8 +15,12 @@ function readIfExistsSync(path) { return existsSync(path) ? readFileSync(path, '
 const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
 
 test('package.json declares the frozen wire protocol (SPEC §2)', () => {
-  assert.equal(pkg.name, 'dsh-pele-mermaid');
+  // GitHub Packages only accepts SCOPED npm packages, so the published name carries the
+  // owner scope. The CLI command name (pkg.bin) stays unscoped on purpose.
+  assert.equal(pkg.name, '@lsy1998/dsh-pele-mermaid');
   assert.match(String(pkg.version), /^\d+\.\d+\.\d+$/);
+  assert.ok(pkg.repository && pkg.repository.url, 'repository.url is required: GitHub Packages links the package to the repo by that URL');
+  assert.match(pkg.repository.url, /github\.com\/lsy1998\/dsh-pele-mermaid/);
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.main, 'lib/index.js');
   assert.deepEqual(pkg.exports, {

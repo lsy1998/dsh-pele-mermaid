@@ -30,6 +30,9 @@
     "test:offline": "node --test --experimental-test-isolation=none \"test/**/*.test.mjs\"",
     "prepare": "npm run build"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

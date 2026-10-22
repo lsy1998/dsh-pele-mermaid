@@ -32,8 +32,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://npm.pkg.github.com/
+          # The scope must match the package name's scope, otherwise the auth line
+          # setup-node writes does not cover the scope being published.
+          registry-url: https://npm.pkg.github.com/lsy1998/
       - run: npm ci
-      - run: npm publish
+      # GitHub Packages defaults a first publish to private; this plugin is public.
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}

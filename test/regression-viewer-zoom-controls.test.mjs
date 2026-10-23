@@ -240,6 +240,49 @@ if (!clientAvailable) {
   });
 
   /**
+   * The inline bar used to print its labels as text. It is icon-only now: the graphic carries
+   * the meaning, and the name survives in aria-label (accessible name) and title (tooltip), so
+   * nothing is lost to a screen reader or to a hover. The type badge stays textual - it names
+   * the diagram, it is not a control.
+   */
+  test('C2: the inline toolbar is icon-only and every control keeps a localized name', async () => {
+    const { handle, container, teardown } = await boot();
+    try {
+      const buttons = buttonsIn(container);
+      assert.equal(buttons.length, 7, 'expected the two view toggles plus five actions, got ' + buttons.length);
+      for (const control of buttons) {
+        const name = (control.getAttribute('aria-label') || '').trim();
+        assert.ok(name.length > 0, 'every icon control needs an accessible name');
+        assert.ok((control.getAttribute('title') || '').trim().length > 0,
+          'every icon control needs a hover tooltip: ' + name);
+        assert.equal((control.textContent || '').trim(), '',
+          'the control must be icon-only, got visible text: ' + name);
+        const icon = control.querySelector('svg');
+        assert.ok(icon, 'the control must carry an SVG icon: ' + name);
+        assert.ok(icon.getAttribute('viewBox'), 'the icon needs a viewBox to scale: ' + name);
+        assert.equal(icon.getAttribute('aria-hidden'), 'true', 'the icon must not be announced twice: ' + name);
+      }
+      // The type badge is still a caption, not a control.
+      const badge = container.querySelector('.dsh-pm-badge');
+      assert.match(badge.textContent, /flowchart/);
+      // Grouping: a hairline separates the view toggle from the actions.
+      assert.ok(container.querySelector('.dsh-pm-bar .dsh-pm-sep'), 'the inline bar needs a group divider');
+      // The names are localized, and a live language switch refreshes them (R11).
+      handle.doc.documentElement.setAttribute('lang', 'zh-CN');
+      await flushAsync(2);
+      const zoomControls = buttonsIn(container).filter((b) => (b.getAttribute('aria-label') || '').length);
+      assert.ok(zoomControls.some((b) => /放大/.test(b.getAttribute('aria-label'))),
+        'the icon names must be localized');
+      assert.ok(zoomControls.some((b) => /放大/.test(b.getAttribute('title'))),
+        'the tooltips must be localized too');
+      for (const control of zoomControls) {
+        assert.equal((control.textContent || '').trim(), '', 'a language switch must not add visible text');
+      }
+    } finally { teardown(); }
+  });
+
+
+  /**
    * Defect F: the scrim used to be a click-to-close surface AND it painted ABOVE the viewport
    * (z-index:1 against the viewport's auto), so in a real browser every press landed on it - a
    * click dismissed the viewer and a drag dismissed it too. The scrim is now inert, and the

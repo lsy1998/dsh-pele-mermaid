@@ -20,7 +20,7 @@ npm run build
 每个 Mermaid 代码块都会获得 **代码 / 图表** 切换、全屏缩放查看器、独立 SVG 导出、DSW 主题适配，
 以及渲染失败时回退到源代码的能力。
 
-- 包名：`dsh-pele-mermaid` `0.1.0`
+- 包名：`dsh-pele-mermaid` `0.1.4`
 - 目标 profile：`desktop`，由 DSH 桌面应用管理
 - 渲染器：`pele@1.9.0`，由插件自身的同源路由提供
 
@@ -31,7 +31,9 @@ npm run build
   Mermaid 关键字才会渲染。
 - 绝不处理带有其他 `language-*` 类的代码块，也绝不处理行内 `code`。
 - **代码 / 图表** 切换按钮带 `aria-pressed`；默认显示图表视图，切换回代码视图时保留原始 `pre`。
-- 工具栏徽标显示识别出的图表类型并标注 “Pele”，另有全屏与 **下载 SVG** 操作。
+- 工具栏为**纯图标**：左侧徽标显示识别出的图表类型并标注 “Pele”，随后是图表/代码切换，再以一条细分隔线
+  分成两组 —— 缩小 / 放大 / 重置、全屏、**下载 SVG**。每个控件都是 16px 描边图标，本地化名称放在
+  `aria-label`（无障碍名称）与 `title`（悬停提示）里，因此窄聊天列下工具栏仍保持一行，悬停与读屏也都不丢信息。
 - 就地缩放与平移：工具栏上的**放大 / 缩小 / 重置缩放**按钮，按住 `Ctrl`（或 `Cmd`）滚动滚轮以指针为中心
   缩放，拖拽可平移，也可使用 `+`、`-`、`0` 与方向键。普通滚轮仍会正常滚动页面。该状态按代码块独立保存，
   图表重新渲染后重置。
@@ -155,8 +157,8 @@ flowchart LR
 ```
 ````
 
-该代码块会变成一个包裹原始 `pre` 的卡片。默认显示图表视图；点击 **代码** 显示未改动的源码，
-点击 **图表** 切回。渲染成功时，全屏与 **下载 SVG** 始终可用。
+该代码块会变成一个包裹原始 `pre` 的卡片。默认显示图表视图；点击**代码**图标显示未改动的源码，
+点击**图表**图标切回。渲染成功时，全屏与下载图标始终可用。
 
 ## 行为与限制
 
@@ -165,7 +167,7 @@ flowchart LR
 | 识别 | class 含 `language-mermaid`、`language-mermaidjs` 或 `language-mmd`（不区分大小写）的 `pre > code` 块。带其他 `language-*` 类的块绝不处理。 |
 | 纯文本回退 | 没有 `language-` 类的 code 元素，仅当 Pele 的 `detectType()` 返回类型 **且** 首词是已知 Mermaid 关键字时才按 Mermaid 处理。 |
 | 幂等 | 已在 `[data-dsh-pele-mermaid]` 内的 `pre` 会被跳过；处理过的块标记 `data-dsh-pele-mermaid-block`，仅外层容器带 `data-dsh-pele-mermaid`。重复处理同一块不会产生副作用。 |
-| 切换 | 工具栏含类型徽标与代码/图表按钮（`aria-pressed`）。默认图表视图，保留原始 `pre`。 |
+| 切换 | 纯图标工具栏，含类型徽标与代码/图表按钮（`aria-pressed`，名称在 `aria-label`/`title`）。默认图表视图，保留原始 `pre`。 |
 | 渲染 | 通过 `window.pele.mount(element, source, options)`，使布局随容器宽度自适应。选项：`maxWidth`、`autoDirection`、`padding`、`icons: () => null`、`links: true`、`linkRel: 'noopener'`。 |
 | 主题 | 在插件容器上把 DSW 令牌映射为 Pele CSS 变量；暗色主题或文档语言变化时重新应用。 |
 | 错误 | `PeleError`（或任何抛出的值）会显示源码与本地化信息，可用时带行列号。错误文本一律按文本插入，绝不作为 HTML。 |

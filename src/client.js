@@ -30,6 +30,7 @@ import {
   checkLimits,
 } from './detection.js';
 import { detectLang, t } from './i18n.js';
+import { createIcon } from './icons.js';
 import { STYLE_ATTR, installStyles, themeVariables, applyTheme } from './styles.js';
 
 export { setPeleRuntimeForTesting, resetPeleRuntimeForTesting };
@@ -214,12 +215,32 @@ function ensureRuntime() {
  * DOM construction (SPEC §7)
  * ------------------------------------------------------------------ */
 
-function makeButton(doc, className, pressed) {
+/**
+ * One icon-only toolbar control.
+ *
+ * The bar used to print the localized words on the buttons themselves ("图形", "代码",
+ * "下载 SVG", …). Next to a badge that already names the diagram type, that turned the strip
+ * above every diagram into a sentence, and in a narrow chat column the labels wrapped before
+ * they shrank. The controls now carry a graphic; the words move to `aria-label` (the
+ * accessible name, R13) and `title` (the hover tooltip), filled by localizeEntry().
+ */
+function makeButton(doc, className, pressed, iconName, labelKey) {
   const button = doc.createElement('button');
   button.type = 'button';
   button.className = className;
   if (pressed != null) button.setAttribute('aria-pressed', pressed);
+  if (labelKey) button.setAttribute('data-i18n-key', labelKey);
+  if (iconName) button.appendChild(createIcon(doc, state.win, iconName));
   return button;
+}
+
+/** Put the localized name on a control: accessible name + hover tooltip, never visible text. */
+function labelControl(control, key) {
+  if (!control) return;
+  const text = t(state.lang, key);
+  control.setAttribute('aria-label', text);
+  control.setAttribute('title', text);
+  control.setAttribute('data-i18n-key', key);
 }
 
 function localizeEntry(entry) {
@@ -227,23 +248,13 @@ function localizeEntry(entry) {
   const type = entry.type || 'mermaid';
   entry.bar.setAttribute('aria-label', t(lang, 'viewOptions'));
   entry.badge.textContent = t(lang, 'badge', { type });
-  entry.btnDiagram.textContent = t(lang, 'diagramView');
-  entry.btnDiagram.setAttribute('aria-label', t(lang, 'diagramView'));
-  entry.btnCode.textContent = t(lang, 'codeView');
-  entry.btnCode.setAttribute('aria-label', t(lang, 'codeView'));
-  entry.btnFullscreen.textContent = t(lang, 'fullscreen');
-  entry.btnFullscreen.setAttribute('aria-label', t(lang, 'fullscreen'));
-  entry.btnDownload.textContent = t(lang, 'downloadSvg');
-  entry.btnDownload.setAttribute('aria-label', t(lang, 'downloadSvg'));
-  entry.btnZoomOut.textContent = t(lang, 'zoomOut');
-  entry.btnZoomOut.setAttribute('aria-label', t(lang, 'zoomOut'));
-  entry.btnZoomOut.setAttribute('title', t(lang, 'zoomOut'));
-  entry.btnZoomIn.textContent = t(lang, 'zoomIn');
-  entry.btnZoomIn.setAttribute('aria-label', t(lang, 'zoomIn'));
-  entry.btnZoomIn.setAttribute('title', t(lang, 'zoomIn'));
-  entry.btnZoomReset.textContent = t(lang, 'resetZoom');
-  entry.btnZoomReset.setAttribute('aria-label', t(lang, 'resetZoom'));
-  entry.btnZoomReset.setAttribute('title', t(lang, 'resetZoom'));
+  labelControl(entry.btnDiagram, 'diagramView');
+  labelControl(entry.btnCode, 'codeView');
+  labelControl(entry.btnFullscreen, 'fullscreen');
+  labelControl(entry.btnDownload, 'downloadSvg');
+  labelControl(entry.btnZoomOut, 'zoomOut');
+  labelControl(entry.btnZoomIn, 'zoomIn');
+  labelControl(entry.btnZoomReset, 'resetZoom');
   entry.pre.setAttribute('aria-label', t(lang, 'sourceLabel'));
   entry.statusEl.setAttribute('aria-label', t(lang, 'statusLabel'));
   if (entry.pane) entry.pane.setAttribute('aria-label', t(lang, 'paneLabel'));
@@ -327,8 +338,8 @@ function enhanceInfo(info) {
   const badge = doc.createElement('span');
   badge.className = 'dsh-pm-badge';
 
-  const btnDiagram = makeButton(doc, 'dsh-pm-btn dsh-pm-view-control', 'true');
-  const btnCode = makeButton(doc, 'dsh-pm-btn dsh-pm-view-control', 'false');
+  const btnDiagram = makeButton(doc, 'dsh-pm-btn dsh-pm-view-control', 'true', 'diagram', 'diagramView');
+  const btnCode = makeButton(doc, 'dsh-pm-btn dsh-pm-view-control', 'false', 'code', 'codeView');
 
   const actions = doc.createElement('div');
   actions.className = 'dsh-pm-actions';
@@ -336,14 +347,20 @@ function enhanceInfo(info) {
   // Ctrl+wheel and the +/-/0 keys, which no discoverable control pointed at - the reported
   // "zoom buttons do not respond" symptom. They drive the same zoomInlineAt() path, so the
   // anchoring, the clamping and the live region behave exactly like the wheel.
-  const btnZoomOut = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
-  const btnZoomIn = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
-  const btnZoomReset = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null);
-  const btnFullscreen = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null);
-  const btnDownload = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null);
+  const btnZoomOut = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null, 'zoomOut', 'zoomOut');
+  const btnZoomIn = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null, 'zoomIn', 'zoomIn');
+  const btnZoomReset = makeButton(doc, 'dsh-pm-btn dsh-pm-zoom', null, 'resetZoom', 'resetZoom');
+  const btnFullscreen = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null, 'expand', 'fullscreen');
+  const btnDownload = makeButton(doc, 'dsh-pm-btn dsh-pm-action', null, 'download', 'downloadSvg');
   actions.append(btnZoomOut, btnZoomIn, btnZoomReset, btnFullscreen, btnDownload);
 
-  bar.append(badge, btnDiagram, btnCode, actions);
+  // The view toggle and the actions are two different kinds of control, so a hairline divides
+  // them the way the fullscreen bar divides its view controls from the exit.
+  const sep = doc.createElement('span');
+  sep.className = 'dsh-pm-sep';
+  sep.setAttribute('aria-hidden', 'true');
+
+  bar.append(badge, btnDiagram, btnCode, sep, actions);
 
   const body = doc.createElement('div');
   body.className = 'dsh-pm-body';

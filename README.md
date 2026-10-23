@@ -22,7 +22,7 @@ Every Mermaid code block gets a **Code / Diagram** toggle, a fullscreen zoom vie
 SVG export, DSW theme adaptation, and a clean fallback to source when a diagram cannot be
 rendered.
 
-- Package: `dsh-pele-mermaid` `0.1.0`
+- Package: `dsh-pele-mermaid` `0.1.4`
 - Intended profile: `desktop`, owned by the DSH Desktop application
 - Renderer: `pele@1.9.0`, served from a same-origin plugin route
 
@@ -35,8 +35,11 @@ rendered.
   `code`.
 - **Code / Diagram** toggle buttons with `aria-pressed`; diagram view is the default, and the
   original `pre` element is preserved for code view.
-- Toolbar badge that names the detected diagram type next to "Pele", plus fullscreen and
-  **Download SVG** actions.
+- An **icon-only toolbar**: a badge naming the detected diagram type next to "Pele", the
+  Diagram/Code toggle, then zoom out / zoom in / reset, fullscreen and **Download SVG**, split
+  into two groups by a hairline. Every control is a 16px stroked icon whose localized name lives
+  in `aria-label` and `title`, so the bar stays one row wide in a narrow chat column and nothing
+  is lost to a hover or a screen reader.
 - Zoom and pan in place: the **Zoom in / Zoom out / Reset zoom** buttons in the toolbar, hold
   `Ctrl` (or `Cmd`) and scroll the wheel to zoom at the pointer, drag to pan, and use `+`,
   `-`, `0` and the arrow keys. A plain wheel still scrolls the page. The state is per block and
@@ -173,8 +176,8 @@ flowchart LR
 ````
 
 The block becomes a card that wraps the original `pre`. Diagram view is shown first; the
-**Code** button reveals the untouched source, and **Diagram** switches back. Fullscreen and
-**Download SVG** are available whenever a diagram rendered successfully.
+**Code** control reveals the untouched source, and **Diagram** switches back. The fullscreen and
+download icons are available whenever a diagram rendered successfully.
 
 ## Behaviour and limits
 
@@ -183,7 +186,7 @@ The block becomes a card that wraps the original `pre`. Diagram view is shown fi
 | Detection | `pre > code` blocks whose class contains `language-mermaid`, `language-mermaidjs` or `language-mmd` (case-insensitive). Blocks with any other `language-*` class are never enhanced. |
 | Plain fallback | A code element with no `language-` class is treated as Mermaid only when Pele's `detectType()` returns a type **and** the first token is a known Mermaid keyword. |
 | Idempotence | A `pre` already inside `[data-dsh-pele-mermaid]` is skipped; processed blocks are marked with `data-dsh-pele-mermaid-block`, while only the wrapper carries `data-dsh-pele-mermaid`. Re-enhancing the same block is a no-op. |
-| Toggle | Toolbar with a type badge and Code/Diagram buttons (`aria-pressed`). Diagram is the default view; the original `pre` is preserved. |
+| Toggle | Icon-only toolbar with a type badge and Code/Diagram controls (`aria-pressed`, names in `aria-label`/`title`). Diagram is the default view; the original `pre` is preserved. |
 | Rendering | Through `window.pele.mount(element, source, options)` so the layout adapts to the container width. Options: `maxWidth`, `autoDirection`, `padding`, `icons: () => null`, `links: true`, `linkRel: 'noopener'`. |
 | Theme | DSW tokens are mapped to Pele CSS variables on our container and re-applied when the dark theme or the document language changes. |
 | Errors | A `PeleError` (or any thrown value) shows the source and a localized message, with line/column when available. Error text is inserted as text, never as HTML. |

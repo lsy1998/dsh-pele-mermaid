@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-23
+
+### Changed
+
+- **The inline toolbar is icon-only.** Diagram/Code, zoom out/in/reset, fullscreen and download
+  used to print their localized words on the buttons, so the strip above every diagram read as a
+  sentence and wrapped first in a narrow chat column. Each control is now a 16px stroked SVG in a
+  28px square; the words moved to `aria-label` (the accessible name) and `title` (the hover
+  tooltip), which is how the fullscreen viewer has worked since 0.1.x.
+- A hairline (`.dsh-pm-sep`) now separates the Diagram/Code toggle from the actions, so the seven
+  identical squares read as two groups. The type badge stays textual — it captions the diagram,
+  it is not a control.
+- The icon set moved to `src/icons.js` (`ICON_PATHS` + `createIcon(doc, win, name)`) and is shared
+  by the inline bar and the overlay, instead of the viewer owning a private copy.
+- New icons: `expand` (two arrows out of opposite corners, the mirror of the viewer's inward
+  `fitWindow` brackets), `download` (arrow into a tray), `diagram` (two connected boxes) and
+  `code` (angle brackets with a slash).
+
+### Added
+
+- `title` tooltips on the Diagram, Code, Fullscreen and Download controls, which previously only
+  carried an `aria-label`.
+- `test/regression-viewer-zoom-controls.test.mjs` — C2 locks the contract: seven controls, no
+  visible text, an SVG with a `viewBox` and `aria-hidden`, a localized `aria-label` and `title`,
+  and a group divider, all surviving a live language switch.
+
+### Notes
+
+- The graphics are real paths, not glyphs: `✕`, `⤡` and `1:1` render differently per platform and
+  U+2921 is missing from common Windows fonts.
+- No API, message-key or class-name change; `.dsh-pm-btn` is simply icon-shaped now (28px square,
+  centred content), and the overlay's 40px override is unchanged.
+
 ## [0.1.3] - 2026-10-23
 
 ### Changed

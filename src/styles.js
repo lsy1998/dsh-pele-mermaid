@@ -30,11 +30,17 @@ export const CSS = `
 .dsh-pm *,.dsh-pm *::before,.dsh-pm *::after{box-sizing:border-box}
 .dsh-pm-bar{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));background:var(--dsw-alias-bg-layer-1,transparent)}
 .dsh-pm-badge{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsh-pm-btn{appearance:none;min-width:28px;min-height:28px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:transparent;color:var(--dsw-alias-label-secondary,#666);border-radius:5px;font:12px/20px inherit;padding:2px 10px;cursor:pointer}
+/* Icon-only controls: a fixed square keeps the strip even, and the 16px graphic centres itself
+   inside it. The visible label is gone, so there is no text padding left to reserve; the
+   localized name still lives in aria-label/title (see labelControl in client.js). */
+.dsh-pm-btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;min-width:28px;height:28px;min-height:28px;padding:0;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:transparent;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;font:12px/20px inherit;cursor:pointer}
 .dsh-pm-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
 .dsh-pm-btn:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:2px}
 .dsh-pm-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
 .dsh-pm-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+/* A hairline between the view toggle and the actions: two different kinds of control, so they
+   read as two groups instead of one run of seven identical squares. */
+.dsh-pm-sep{flex:0 0 auto;width:1px;height:16px;margin:0 2px;background:var(--dsw-alias-border-l1,rgba(127,127,127,.28))}
 /* The icon is a stroked SVG that inherits the button's colour, so it follows the theme in
    both light and dark mode without a second set of assets. */
 .dsh-pm-icon{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}

@@ -9,6 +9,7 @@
  */
 
 import { BUILD_STAMP } from './build-stamp.js';
+import { createIcon } from './icons.js';
 import {
   ZOOM_STEP,
   applyTransform,
@@ -30,46 +31,6 @@ var FALLBACK_MESSAGES = {
 
 var INTERPOLATE_RE = /\{(\w+)\}/g;
 var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
-/**
- * Inline SVG for the viewer controls.
- *
- * The controls used to be typographic glyphs (✕, ⤡, 1:1). Those render differently on every
- * platform and some of them (⤡, U+2921) are simply missing from common Windows fonts, so a
- * control could end up as a blank box. Real SVG paths look the same everywhere, inherit the
- * button's colour through `currentColor` and scale with the chrome.
- *
- * The markup is a compile-time constant - no user data ever reaches the DOM as markup.
- */
-var ICON_PATHS = {
-  // Magnifier with a plus: zoom in.
-  zoomIn: '<circle cx="6.75" cy="6.75" r="4.25"></circle>' +
-    '<path d="M9.9 9.9 13.5 13.5"></path>' +
-    '<path d="M4.9 6.75h3.7M6.75 4.9v3.7"></path>',
-  // The same magnifier with a minus: zoom out.
-  zoomOut: '<circle cx="6.75" cy="6.75" r="4.25"></circle>' +
-    '<path d="M9.9 9.9 13.5 13.5"></path>' +
-    '<path d="M4.9 6.75h3.7"></path>',
-  // Four corner brackets: fit the diagram to the window.
-  fitWindow: '<path d="M2 6V3.5A1.5 1.5 0 0 1 3.5 2H6"></path>' +
-    '<path d="M10 2h2.5A1.5 1.5 0 0 1 14 3.5V6"></path>' +
-    '<path d="M14 10v2.5a1.5 1.5 0 0 1-1.5 1.5H10"></path>' +
-    '<path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5V10"></path>',
-  // A frame around a smaller frame: the diagram back at its natural 1:1 size.
-  resetZoom: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"></rect>' +
-    '<rect x="6" y="6" width="4" height="4" rx="0.5"></rect>',
-  // A cross: leave the fullscreen viewer.
-  close: '<path d="M4 4l8 8M12 4l-8 8"></path>',
-};
-
-/** Fallback glyphs, used only if the DOM cannot parse SVG (then the control is never blank). */
-var ICON_FALLBACK = {
-  zoomIn: '+',
-  zoomOut: '−',
-  fitWindow: '⤡',
-  resetZoom: '1:1',
-  close: '✕',
-};
 
 /**
  * Wheel sensitivity.
@@ -159,37 +120,9 @@ export function createViewer(deps) {
     node.setAttribute('data-i18n-key', key);
     node.setAttribute('aria-label', t(key));
     node.setAttribute('title', t(key));
-    node.appendChild(icon(iconName));
+    node.appendChild(createIcon(doc, win, iconName));
     node.onclick = handler;
     return node;
-  }
-
-  /** Build the inline SVG for an icon, or a text fallback if the DOM cannot make one. */
-  function icon(name) {
-    var markup = ICON_PATHS[name];
-    if (!markup) return doc.createTextNode(ICON_FALLBACK[name] || '');
-    var ns = 'http://www.w3.org/2000/svg';
-    var Parser = (win && win.DOMParser) || (typeof DOMParser !== 'undefined' ? DOMParser : null);
-    if (Parser) {
-      try {
-        var parsed = new Parser().parseFromString(
-          '<svg xmlns="' + ns + '" viewBox="0 0 16 16">' + markup + '</svg>', 'image/svg+xml');
-        var rootNode = parsed && parsed.documentElement;
-        var failed = parsed && typeof parsed.getElementsByTagName === 'function'
-          ? parsed.getElementsByTagName('parsererror')
-          : null;
-        if (rootNode && String(rootNode.nodeName).toLowerCase() === 'svg' && failed && !failed.length) {
-          var svg = doc.importNode(rootNode, true);
-          svg.setAttribute('width', '16');
-          svg.setAttribute('height', '16');
-          svg.setAttribute('aria-hidden', 'true');
-          svg.setAttribute('focusable', 'false');
-          svg.setAttribute('class', 'dsh-pm-icon');
-          return svg;
-        }
-      } catch (error) { /* fall through to the glyph */ }
-    }
-    return doc.createTextNode(ICON_FALLBACK[name] || '');
   }
 
   /** Re-apply every localized string; called on open() and on a language change. */

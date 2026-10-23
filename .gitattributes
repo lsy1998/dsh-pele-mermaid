@@ -1,0 +1,8 @@
+# lib/pele-runtime.js must stay byte-identical to pele's dist/pele.global.js: it is shipped
+# unmodified and scripts/build.mjs fails the build when its sha256 no longer matches the copy in
+# node_modules. With core.autocrlf=true (the Windows default) a checkout would rewrite every
+# newline in it, so pin the line endings instead of letting git convert them.
+lib/pele-runtime.js text eol=lf
+# Same reasoning for the generated browser bundle: it is rebuilt from src/, but a checkout that
+# silently converts it makes every rebuild produce a whole-file diff.
+lib/client.js text eol=lf

@@ -19,8 +19,19 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const PACKAGE_ID = 'dsh-pele-mermaid';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * The client-module registration id MUST be the published package name, scope included.
+ *
+ * The host derives every boot-graph row's `id` from the package name and then, after
+ * executing a bundle, asserts `factories.has(row.id)`. A bundle that registers under a
+ * shorter id leaves that assertion false, so `arrive()` throws
+ * "loaded without registering ... via __ModuleLoader__.load" and the browser half never
+ * activates — silently, because the host half still works. Reading the id from
+ * package.json keeps the two sides in lockstep instead of hard-coding one.
+ */
+const PACKAGE_ID = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name;
 const DEFAULT_ENTRY = join(ROOT, 'src', 'client.js');
 const OUT_CLIENT = join(ROOT, 'lib', 'client.js');
 const OUT_HOST = join(ROOT, 'lib', 'index.js');

@@ -130,7 +130,46 @@ test('cordis.patch.yml inserts the ui-pele-mermaid plugin id (SPEC §2)', async 
   }
   assert.match(patch, /insert/);
   assert.match(patch, /id:\s*ui-pele-mermaid/);
-  assert.match(patch, /name:\s*['"]?dsh-pele-mermaid['"]?/);
+  // `name` is a MODULE SPECIFIER: the host does loader.import(name) and then finds the
+  // package manifest by matching package.json#name EXACTLY. So it has to be the published
+  // package name, scope included. Pinning the literal 'dsh-pele-mermaid' is what let the
+  // scoped rename slip through: the unscoped name still resolved on a machine that had a
+  // stray node_modules link, so the plugin appeared installed while never actually loading.
+  // Derive the expected value from package.json instead of spelling it out, and require an
+  // exact match rather than a substring of a regex.
+  const declared = [...patch.matchAll(/^\s*name:\s*['"]?([^'"\r\n]+?)['"]?\s*$/gm)].map((m) => m[1]);
+  assert.ok(declared.length > 0, 'cordis.patch.yml must declare a name for the bundle entry');
+  for (const name of declared) {
+    assert.equal(
+      name,
+      pkg.name,
+      'cordis.patch.yml name must be the exact published package name (package.json#name ' +
+      `= ${pkg.name}); got ${name}. The host resolves it as a module specifier and then ` +
+      'matches package.json#name, so an unscoped or mismatched name silently loads nothing.',
+    );
+  }
+});
+
+test('the built client bundle registers under the published package name', async () => {
+  const bundle = await readIfExists(workspacePath('lib', 'client.js'));
+  if (bundle === null) {
+    assert.ok(true, 'lib/client.js not built yet — skipping registration-id check');
+    return;
+  }
+  // The host builds every boot-graph row's `id` from the package name, executes the
+  // bundle, then asserts `factories.has(row.id)`. A bundle registering a shorter id
+  // therefore throws "loaded without registering ... via __ModuleLoader__.load" and the
+  // browser half never activates — while the host half keeps working, so the failure is
+  // silent. Keep the emitted id equal to package.json#name, not to a hard-coded literal.
+  const ids = [...bundle.matchAll(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]*)"/g)].map((m) => m[1]);
+  assert.equal(ids.length, 1, 'lib/client.js must call window.__ModuleLoader__.load exactly once');
+  assert.equal(
+    ids[0],
+    pkg.name,
+    'the client bundle must register under the published package name (package.json#name ' +
+    `= ${pkg.name}); got ${ids[0]}. The host matches the boot-graph row id, which is the ` +
+    'package name, so an unscoped id never registers and the client half silently never loads.',
+  );
 });
 
 test('build outputs appear together once scripts/build.mjs has run (SPEC §8/§9.4)', () => {

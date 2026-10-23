@@ -4,11 +4,15 @@
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   CLIENT_BUNDLE, SKIP_MESSAGES, setupClient, createFakePele, createCtx, flushAsync,
   accessibleName, buttonsIn, chromeTexts, installWatchdog, matchMessage, resolveMessages,
+  workspacePath,
 } from './harness.mjs';
+
+/** The published package name is the only valid client-module registration id. */
+const pkgName = JSON.parse(readFileSync(workspacePath('package.json'), 'utf8')).name;
 
 const clientAvailable = existsSync(CLIENT_BUNDLE);
 const clearWatchdog = clientAvailable ? installWatchdog('client-dom') : null;
@@ -40,7 +44,11 @@ if (!clientAvailable) {
   test('bundle contract: id, inject, single loader call, no bundled pele require (SPEC §2/§8)', async () => {
     const handle = await setupClient({ lang: 'en' });
     try {
-      assert.equal(handle.bundle.id, 'dsh-pele-mermaid');
+      // The id must be the published package name: the host builds each boot-graph row's
+      // id from package.json#name and asserts factories.has(row.id) after executing the
+      // bundle. Pinning the unscoped literal here is what hid that mismatch — the plugin
+      // loaded its host half fine while the browser half never registered.
+      assert.equal(handle.bundle.id, pkgName);
       assert.deepEqual(handle.plugin.inject, []);
       assert.deepEqual(handle.bundle.requires, [], 'the factory must not require() anything at runtime');
       assert.ok(handle.bundle.source.length < 1_500_000, 'lib/client.js must not embed the 682 KB pele runtime');

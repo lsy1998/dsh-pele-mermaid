@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-23
+
+### Fixed
+
+- **The plugin installed cleanly and then did nothing.** Two identifiers had to be the
+  published package name (`@lsy1998/dsh-pele-mermaid`) and were instead the bare
+  `dsh-pele-mermaid`:
+  - `cordis.patch.yml` used the bare name as an entry `name`. The host treats that field as a
+    **module specifier**: it runs `loader.import(name)` and then locates the package manifest by
+    matching `package.json#name` exactly. On a machine with no stray `node_modules/dsh-pele-mermaid`
+    link the import throws, the entry is recorded as `error`, and startup carries on — so the
+    plugin was simply absent, with no message about it.
+  - the built client bundle registered as `dsh-pele-mermaid`. The host derives each boot-graph
+    row's `id` from the package name, executes the bundle, then asserts `factories.has(row.id)`.
+    A short id leaves that false, `arrive()` throws *"loaded without registering ... via
+    `__ModuleLoader__.load`"*, and the browser half never activates — while the host half keeps
+    serving its route, which is why the failure looked like "installed but useless" rather than
+    an install error.
+
+  Both values are now derived from `package.json#name` instead of hard-coded, and both are
+  guarded: `cordis.patch.yml` must equal the package name, and the bundle must register under
+  it. The two older assertions had pinned the wrong literals, which is how the mismatch survived.
+
 ## [0.1.1] - 2026-10-22
 
 ### Added

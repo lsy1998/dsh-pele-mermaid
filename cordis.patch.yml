@@ -1,3 +1,12 @@
+# Insert the dual-face plugin into the DSH web profile roster.
+#
+# `name` is a MODULE SPECIFIER, not a label: the host resolves it with
+# loader.import() and then locates that package's manifest by matching
+# package.json#name exactly. It must therefore be the published package name,
+# scope included. An unscoped 'dsh-pele-mermaid' only resolves when a stray
+# node_modules/dsh-pele-mermaid link happens to exist, and even then the
+# manifest name does not match, so the client bundle is never registered and
+# the plugin silently does nothing.
 - insert:
     - id: ui-pele-mermaid
-      name: 'dsh-pele-mermaid'
+      name: '@lsy1998/dsh-pele-mermaid'

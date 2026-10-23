@@ -15,14 +15,14 @@ npm run build
 **标签：** `deepseek-harness` · `dsh-plugin` · `mermaid` · `plugin`
 
 [Pele](https://github.com/obsidianmd/pele) 是 Obsidian 团队出品的轻量 Mermaid 转 SVG 渲染器
-（`pele@1.6.0`，MIT）。它支持 **Mermaid 12.1.0** 内置的全部图表类型，并使用 CSS 变量适配主题。
+（`pele@1.9.0`，MIT）。它支持 **Mermaid 12.1.0** 内置的全部图表类型，并使用 CSS 变量适配主题。
 
 每个 Mermaid 代码块都会获得 **代码 / 图表** 切换、全屏缩放查看器、独立 SVG 导出、DSW 主题适配，
 以及渲染失败时回退到源代码的能力。
 
 - 包名：`dsh-pele-mermaid` `0.1.0`
 - 目标 profile：`desktop`，由 DSH 桌面应用管理
-- 渲染器：`pele@1.6.0`，由插件自身的同源路由提供
+- 渲染器：`pele@1.9.0`，由插件自身的同源路由提供
 
 ## 功能
 
@@ -212,13 +212,13 @@ flowchart LR
   `/dsh-pele-mermaid/pele-runtime.js`。`GET` 或 `HEAD` 请求返回内置的 Pele 脚本，内容类型为
   `text/javascript` 并带不可变缓存头；其他情况返回 404 或 405。路由注册在 `ctx.effect(...)`
   内，释放时被移除。
-- **客户端面** — `lib/client.js` 以 `dsh-pele-mermaid` 注册到 DSH 客户端模块加载器。它
+- **客户端面** — `lib/client.js` 以 `@lsy1998/dsh-pele-mermaid` 注册到 DSH 客户端模块加载器。它
   **不** 打包 Pele。检测到第一个 Mermaid 块时注入
   `<script data-dsh-pele-runtime src="/dsh-pele-mermaid/pele-runtime.js">`；加载器幂等、合并并发
   调用，随后 `window.pele` 即为 Pele 实例。
-- **运行时副本** — `lib/pele-runtime.js` 是 `pele@1.6.0` 的
-  `node_modules/pele/dist/pele.global.js` 的 **未修改副本**（682,005 字节，sha256
-  `b82d1bcd435302779a945e1e0f4a54ea56fb26e010ce3f2122f4216fcfc095d7`）。构建逐字节复制，
+- **运行时副本** — `lib/pele-runtime.js` 是 `pele@1.9.0` 的
+  `node_modules/pele/dist/pele.global.js` 的 **未修改副本**（706,153 字节，sha256
+  `323c16de7844d4b609743f70449ebce041a531e4f48f23b1e9e7ec9d3b917287`）。构建逐字节复制，
   该文件是生成产物，绝不手工编辑。
 
 发布包内容（共 11 个文件）：`package.json`、`cordis.patch.yml`、`lib/index.js`、`lib/client.js`、
@@ -242,7 +242,7 @@ HTML 标签，`click` 语句中的 JavaScript 回调会被忽略。链接只允�
 
 ## 兼容性
 
-- Pele `1.6.0`（MIT，[obsidianmd/pele](https://github.com/obsidianmd/pele)）。
+- Pele `1.9.0`（MIT，[obsidianmd/pele](https://github.com/obsidianmd/pele)）。
 - Mermaid `12.1.0` 语法覆盖范围，即 Pele 所实现的语法。Pele 不认识的图表类型会回退到源码并显示
   `unsupported-diagram` 信息。
 - DSH 开发者预览版。已在 Windows、Node.js v22.18.0、npm 10.9.3、pnpm 11.21.0 环境下，对随应用
@@ -304,6 +304,6 @@ npm run test:offline
 
 本插件采用 [MIT](LICENSE)，Copyright (c) 2026 dsh-pele-mermaid contributors。
 
-`lib/pele-runtime.js` 是 `pele@1.6.0` `dist/pele.global.js` 的未修改副本，MIT，
+`lib/pele-runtime.js` 是 `pele@1.9.0` `dist/pele.global.js` 的未修改副本，MIT，
 Copyright (c) 2026 kepano — [obsidianmd/pele](https://github.com/obsidianmd/pele)，由 Obsidian
 团队开发。完整第三方声明见 [LICENSE](LICENSE)。

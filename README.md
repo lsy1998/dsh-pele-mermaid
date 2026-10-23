@@ -15,7 +15,7 @@ Render Mermaid fenced code blocks in the DeepSeek Harness (DSH) Web GUI as SVG d
 **Topics:** `deepseek-harness` · `dsh-plugin` · `mermaid` · `plugin`
 
 [Pele](https://github.com/obsidianmd/pele) is the lightweight Mermaid-to-SVG renderer from the
-Obsidian team (`pele@1.6.0`, MIT). It supports the diagram types built into **Mermaid 12.1.0**
+Obsidian team (`pele@1.9.0`, MIT). It supports the diagram types built into **Mermaid 12.1.0**
 and is themed with CSS variables.
 
 Every Mermaid code block gets a **Code / Diagram** toggle, a fullscreen zoom viewer, standalone
@@ -24,7 +24,7 @@ rendered.
 
 - Package: `dsh-pele-mermaid` `0.1.0`
 - Intended profile: `desktop`, owned by the DSH Desktop application
-- Renderer: `pele@1.6.0`, served from a same-origin plugin route
+- Renderer: `pele@1.9.0`, served from a same-origin plugin route
 
 ## Features
 
@@ -235,12 +235,13 @@ The package is a dual-face DSH plugin bundle:
   else gets 404 or 405. The route is registered inside `ctx.effect(...)` so it is removed on
   disposal.
 - **Client face** — `lib/client.js` registers itself with the DSH client module loader as
-  `dsh-pele-mermaid`. It does **not** bundle Pele. The first detected Mermaid block injects
+  `@lsy1998/dsh-pele-mermaid` (the package name; the loader matches it against each boot-graph
+  row's id). It does **not** bundle Pele. The first detected Mermaid block injects
   `<script data-dsh-pele-runtime src="/dsh-pele-mermaid/pele-runtime.js">`; the loader is
   idempotent, dedupes concurrent calls, and `window.pele` becomes the Pele instance.
 - **Runtime copy** — `lib/pele-runtime.js` is an **unmodified copy** of
-  `node_modules/pele/dist/pele.global.js` from `pele@1.6.0` (682,005 bytes, sha256
-  `b82d1bcd435302779a945e1e0f4a54ea56fb26e010ce3f2122f4216fcfc095d7`). The build copies it
+  `node_modules/pele/dist/pele.global.js` from `pele@1.9.0` (706,153 bytes, sha256
+  `323c16de7844d4b609743f70449ebce041a531e4f48f23b1e9e7ec9d3b917287`). The build copies it
   byte-for-byte; it is generated, never hand-edited.
 
 Published package contents (11 files): `package.json`, `cordis.patch.yml`, `lib/index.js`,
@@ -265,7 +266,7 @@ This plugin's responsibilities:
 
 ## Compatibility
 
-- Pele `1.6.0` (MIT, [obsidianmd/pele](https://github.com/obsidianmd/pele)).
+- Pele `1.9.0` (MIT, [obsidianmd/pele](https://github.com/obsidianmd/pele)).
 - Mermaid `12.1.0` syntax coverage, which is what Pele implements. Diagram types Pele does not
   recognize fall back to source with an `unsupported-diagram` message.
 - DSH developer preview. Verified against the bundled desktop runtime `0.2.1-rc.2` and the
@@ -334,6 +335,6 @@ block npm lifecycle scripts may need `--ignore-scripts` (the esbuild binary ship
 
 [MIT](LICENSE) for this plugin, Copyright (c) 2026 dsh-pele-mermaid contributors.
 
-`lib/pele-runtime.js` is an unmodified copy of `pele@1.6.0` `dist/pele.global.js`, MIT,
+`lib/pele-runtime.js` is an unmodified copy of `pele@1.9.0` `dist/pele.global.js`, MIT,
 Copyright (c) 2026 kepano — [obsidianmd/pele](https://github.com/obsidianmd/pele), by the Obsidian
 team. See [LICENSE](LICENSE) for the full third-party notice.

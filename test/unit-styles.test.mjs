@@ -26,7 +26,9 @@ const CHAINS = {
   '--pele-border': ['--dsw-alias-border-l2', '--dsw-alias-border-l1'],
   '--pele-accent': ['--dsw-alias-button-primary-fill', '--dsw-alias-brand-primary'],
   '--pele-font': ['--ds-font-family-default', '--ds-font-family-interface'],
+  '--pele-font-mono': ['--ds-font-family-code', '--dsw-font-markdown-code-font-family'],
   '--pele-error': ['--dsw-alias-state-error-primary'],
+  '--pele-critical': ['--dsw-alias-state-warn-primary', '--dsw-alias-state-error-primary'],
 };
 const LITERALS = {
   '--pele-bg': 'transparent',

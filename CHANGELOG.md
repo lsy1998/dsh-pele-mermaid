@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-23
+
+### Changed
+
+- **Upgraded the bundled renderer from Pele 1.6.0 to 1.9.0** (packed size 682 KB → 706 KB, +3.5%).
+  `lib/pele-runtime.js` is still a byte-identical copy of `node_modules/pele/dist/pele.global.js`,
+  and `prepack` rebuilds it, so the published package and the GitHub-source install stay in step.
+  The `mount()` contract, the exported API surface and every `detectType()` result are unchanged,
+  so this is a drop-in swap with no plugin code changes.
+- Label rendering improvements that come with the upgrade:
+  - `List<T>` and `Map<K,V>` labels no longer lose the angle-bracket part (Pele 1.9.0, issue #31).
+  - Chinese and Japanese labels wrap between characters instead of stretching the diagram, and
+    closing punctuation stays on the line it follows (Pele 1.7.0).
+  - Labels support `<sub>`, `<sup>`, `<code>`, `<kbd>`, `<samp>`, `<tt>`, `<u>`, `<ins>`, `<var>`,
+    `<cite>` and `<dfn>`.
+  - Class diagrams wrap separate groups onto new rows to fit the pane instead of shrinking the
+    whole drawing, which matters in the narrow chat column.
+  - `mount()` no longer raises "ResizeObserver loop" errors when a diagram resizes.
+
+### Added
+
+- `--pele-font-mono` is now mapped from `--ds-font-family-code`, so `<code>`/`<kbd>`/`<samp>`
+  labels use the host's monospace face instead of Pele's own default.
+- `--pele-critical` is now mapped, borrowing the warning colour and falling back to the error
+  colour. `--pele-error` was already mapped; both are inlined into standalone SVG exports.
+
+### Notes
+
+- Pele also exposes `--pele-series-1`…`--pele-series-8` (chart series) and `--pele-radius`, but DSH
+  publishes no equivalent chart-series or radius tokens. They are deliberately left unmapped so
+  Pele's own palette applies, rather than inventing eight colours that would not follow the theme.
+- The `.dsh-pm-inline-stage` wrapper stays: Pele 1.9.0 still rewrites the mounted `svg`'s whole
+  `style` attribute when the pane resizes (it only deferred that work into `requestAnimationFrame`),
+  so the zoom must continue to live on our own element.
+
 ## [0.1.2] - 2026-10-23
 
 ### Fixed

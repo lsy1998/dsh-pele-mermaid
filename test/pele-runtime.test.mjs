@@ -114,8 +114,9 @@ if (!pele) {
     assert.ok(Number.isInteger(syntaxError.column) && syntaxError.column > 0, 'column: ' + syntaxError.column);
     assert.ok(typeof syntaxError.snippet === 'string' && syntaxError.snippet.length > 0, 'snippet must be present');
     assert.ok(typeof syntaxError.message === 'string' && syntaxError.message.length > 0);
-    // Real pele@1.6.0: an EOF error points past the last line, so the quoted source is empty here
-    // ("Parse error on line 3:\n\n^"). The source line is embedded whenever the failing line exists.
+    // Real pele (devDependency, currently 1.9.0): an EOF error points past the last line, so the
+    // quoted source is empty here ("Parse error on line 3:\n\n^"). The source line is embedded
+    // whenever the failing line exists.
     assert.match(syntaxError.message, /line \d+/i);
     assert.ok(syntaxError.snippet.includes('^'), 'snippet must carry the caret marker');
 

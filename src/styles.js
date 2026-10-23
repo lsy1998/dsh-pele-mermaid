@@ -19,7 +19,9 @@ export const PELE_VARIABLES = Object.freeze([
   '--pele-border',
   '--pele-accent',
   '--pele-font',
+  '--pele-font-mono',
   '--pele-error',
+  '--pele-critical',
 ]);
 
 /** All CSS owned by the plugin (chrome + panes + fullscreen viewer). */
@@ -187,7 +189,13 @@ export function themeVariables(win) {
   put('--pele-border', readVar(computed, ['--dsw-alias-border-l2', '--dsw-alias-border-l1']));
   put('--pele-accent', readVar(computed, ['--dsw-alias-button-primary-fill', '--dsw-alias-brand-primary']));
   put('--pele-font', readVar(computed, ['--ds-font-family-default', '--ds-font-family-interface']) || 'sans-serif');
+  // Pele 1.9 renders <code>, <kbd>, <samp> and <tt> labels in its monospace face, so the
+  // mono token has to be mapped too or those labels fall back to Pele's own monospace.
+  put('--pele-font-mono', readVar(computed, ['--ds-font-family-code', '--dsw-font-markdown-code-font-family']));
   put('--pele-error', readVar(computed, ['--dsw-alias-state-error-primary']));
+  // Pele colours its "critical" marks (e.g. gantt critical tasks) with this; DSH has no
+  // critical token, so borrow the warning colour and fall back to the error colour.
+  put('--pele-critical', readVar(computed, ['--dsw-alias-state-warn-primary', '--dsw-alias-state-error-primary']));
   return vars;
 }
 
